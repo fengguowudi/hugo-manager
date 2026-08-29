@@ -13,6 +13,7 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -20,7 +21,8 @@ import (
 type nativeUI struct {
 	a       *App
 	win     fyne.Window
-	tabs    *container.AppTabs
+	pages   *fyne.Container
+	nav     []*widget.Button
 	status  *widget.Label
 	posts   []Post
 	list    *widget.List
@@ -34,22 +36,51 @@ type nativeUI struct {
 	postDescription, postBody          *widget.Entry
 	postDraft                          *widget.Check
 	logs                               *widget.Entry
+	siteLabel                          *widget.Label
+	views                              []fyne.CanvasObject
 }
 
 func runNativeApp(a *App) {
 	ui := &nativeUI{a: a}
 	ui.win = app.New().NewWindow("Hugo 管理器")
-	ui.win.Resize(fyne.NewSize(1100, 720))
+	ui.win.Resize(fyne.NewSize(1180, 760))
 	ui.status = widget.NewLabel("正在读取站点状态…")
-	ui.tabs = container.NewAppTabs(
-		container.NewTabItem("概览", ui.overview()),
-		container.NewTabItem("内容", ui.content()),
-		container.NewTabItem("构建", ui.build()),
-		container.NewTabItem("设置", ui.settings()),
-	)
-	ui.win.SetContent(container.NewBorder(nil, ui.status, nil, nil, ui.tabs))
+
+	ui.views = []fyne.CanvasObject{ui.overview(), ui.content(), ui.build(), ui.settings()}
+	ui.pages = container.NewMax(ui.views[0])
+	ui.nav = []*widget.Button{
+		widget.NewButtonWithIcon("概览", theme.HomeIcon(), func() { ui.showPage(0) }),
+		widget.NewButtonWithIcon("内容", theme.ListIcon(), func() { ui.showPage(1) }),
+		widget.NewButtonWithIcon("构建与预览", theme.ViewRefreshIcon(), func() { ui.showPage(2) }),
+		widget.NewButtonWithIcon("设置", theme.SettingsIcon(), func() { ui.showPage(3) }),
+	}
+	for _, button := range ui.nav {
+		button.Alignment = widget.ButtonAlignLeading
+		button.Importance = widget.LowImportance
+	}
+	ui.nav[0].Importance = widget.MediumImportance
+
+	brand := container.NewVBox(widget.NewLabel("HUGO 管理器"), widget.NewLabel("本地内容工作台"))
+	ui.siteLabel = widget.NewLabel("未配置站点")
+	sidebar := container.NewBorder(brand, ui.siteLabel, nil, nil, container.NewVBox(widget.NewSeparator(), ui.nav[0], ui.nav[1], ui.nav[2], ui.nav[3]))
+	ui.win.SetContent(container.NewBorder(nil, ui.status, sidebar, nil, ui.pages))
 	ui.refresh()
 	ui.win.ShowAndRun()
+}
+func (ui *nativeUI) showPage(active int) {
+	if active == 0 {
+		ui.views[0] = ui.overview()
+	}
+	ui.pages.Objects = []fyne.CanvasObject{ui.views[active]}
+	ui.pages.Refresh()
+	for i, button := range ui.nav {
+		if i == active {
+			button.Importance = widget.MediumImportance
+		} else {
+			button.Importance = widget.LowImportance
+		}
+		button.Refresh()
+	}
 }
 
 func (ui *nativeUI) setStatus(format string, args ...any) {
@@ -60,11 +91,18 @@ func (ui *nativeUI) refresh() {
 	cfg := ui.a.cfgSnapshot()
 	if cfg.SiteDir == "" {
 		ui.setStatus("尚未配置站点")
+		if ui.siteLabel != nil {
+			ui.siteLabel.SetText("未配置站点")
+		}
 	} else {
 		posts, _ := listPosts(cfg.SiteDir)
 		ui.posts = posts
 		if ui.list != nil {
 			ui.list.Refresh()
+		}
+		if ui.siteLabel != nil {
+			name, _ := siteInfo(cfg.SiteDir)
+			ui.siteLabel.SetText(fallback(name, filepath.Base(cfg.SiteDir)))
 		}
 		ui.setStatus("站点：%s · %d 篇内容", cfg.SiteDir, len(posts))
 	}
@@ -93,13 +131,13 @@ func (ui *nativeUI) overview() fyne.CanvasObject {
 	}
 	update()
 	buttons := container.NewHBox(
-		widget.NewButton("新建文章", func() { ui.tabs.SelectIndex(1) }),
+		widget.NewButtonWithIcon("新建文章", theme.ContentAddIcon(), func() { ui.showPage(1) }),
 		widget.NewButton("启动预览服务器", func() { ui.startServer() }),
 		widget.NewButton("构建站点", func() { ui.buildSite() }),
 	)
 	if cfg.SiteDir == "" {
 		return container.NewBorder(widget.NewLabel("欢迎使用 Hugo 管理器"), nil, nil, nil,
-			container.NewVBox(widget.NewLabel("请先在“设置”中填写 Hugo 路径和站点目录。"), widget.NewButton("打开设置", func() { ui.tabs.SelectIndex(3) })))
+			container.NewVBox(widget.NewLabel("请先在“设置”中填写 Hugo 路径和站点目录。"), widget.NewButtonWithIcon("打开设置", theme.SettingsIcon(), func() { ui.showPage(3) })))
 	}
 	return container.NewBorder(widget.NewLabel("站点概览"), buttons, nil, nil, container.NewVBox(info))
 }
