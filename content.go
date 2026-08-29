@@ -1,0 +1,327 @@
+package main
+
+// 本文件：content/ 目录扫描、front matter 的读取与"外科手术式"写回。
+// 写回策略：只替换被编辑字段的所在行，其余内容（含未知自定义字段）逐字节保留，
+// 因此不会破坏用户手工维护的 front matter。仅支持 YAML(---) 与 TOML(+++)，
+// JSON front matter 只能整体查看（不做结构化编辑）。
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
+)
+
+// Post 列表页需要的文章摘要信息。
+type Post struct {
+	Path    string `json:"path"` // 相对站点根目录，如 content/posts/hello.md
+	Title   string `json:"title"`
+	Section string `json:"section"` // content/ 下第一级目录名
+	Draft   bool   `json:"draft"`
+	Date    string `json:"date"` // front matter 原始字符串（ISO 排序友好）
+	Kind    string `json:"kind"` // page=普通文章 section=列表页(_index.md) bundle=页面包(index.md)
+}
+
+var (
+	reYamlKV = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(.*)$`)
+	reTomlKV = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_-]*)\s*=\s*(.*)$`)
+)
+
+// parsePost 解析一个内容文件：返回 front matter 格式、标量字段、数组字段、正文、原始全文。
+// 没有 front matter 时 format 为空、body 即全文。
+func parsePost(p string) (fmFmt string, fields map[string]string, arrays map[string][]string, body, raw string, err error) {
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return
+	}
+	raw = strings.TrimPrefix(string(b), "\uFEFF") // 去掉可能的 UTF-8 BOM
+	lines := strings.Split(raw, "\n")
+	fields, arrays = map[string]string{}, map[string][]string{}
+
+	first := strings.TrimRight(lines[0], "\r")
+	var delim string
+	switch first {
+	case "---":
+		fmFmt, delim = "yaml", "---"
+	case "+++":
+		fmFmt, delim = "toml", "+++"
+	}
+	if fmFmt == "" {
+		body = raw
+		return
+	}
+	end := -1
+	for i := 1; i < len(lines); i++ {
+		if strings.TrimRight(lines[i], "\r") == delim {
+			end = i
+			break
+		}
+	}
+	if end == -1 { // 只有开分隔符、没有闭分隔符 → 当作无 front matter
+		fmFmt, body = "", raw
+		return
+	}
+	re := reYamlKV
+	if fmFmt == "toml" {
+		re = reTomlKV
+	}
+	for _, ln := range lines[1:end] {
+		m := re.FindStringSubmatch(ln)
+		if m == nil {
+			continue
+		}
+		k, v := m[1], strings.TrimSpace(m[2])
+		if strings.HasPrefix(v, "[") && strings.HasSuffix(v, "]") {
+			arrays[k] = splitList(v[1 : len(v)-1])
+			continue
+		}
+		fields[k] = unquote(v)
+	}
+	body = strings.Join(lines[end+1:], "\n")
+	return
+}
+
+// splitList 拆分行内数组 a, b, "c d"。
+func splitList(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := unquote(strings.TrimSpace(p)); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+func unquote(v string) string {
+	v = strings.TrimSpace(v)
+	if len(v) >= 2 && (v[0] == '"' && v[len(v)-1] == '"' || v[0] == '\'' && v[len(v)-1] == '\'') {
+		inner := v[1 : len(v)-1]
+		return strings.NewReplacer(`\"`, `"`, `\'`, `'`, `\\`, `\`).Replace(inner)
+	}
+	return v
+}
+
+// savePost 结构化保存：仅改写被编辑字段所在行，正文整体替换，其余保留。
+// 兼容 CRLF 文件：统一先归一为 LF 再按原换行风格重组，避免 \r 翻倍。
+func savePost(p string, fields map[string]string, arrays map[string][]string, body string) error {
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return err
+	}
+	orig := string(b)
+	bom := strings.HasPrefix(orig, "\uFEFF")
+	raw := strings.TrimPrefix(orig, "\uFEFF")
+	eol := "\n"
+	if strings.Contains(raw, "\r\n") {
+		eol = "\r\n" // 保持原有换行风格
+	}
+	lines := strings.Split(raw, "\n")
+	first := strings.TrimRight(lines[0], "\r")
+	var delim, fmFmt string
+	switch first {
+	case "---":
+		fmFmt, delim = "yaml", "---"
+	case "+++":
+		fmFmt, delim = "toml", "+++"
+	}
+	if fmFmt == "" {
+		return errors.New("该文件没有 front matter，暂不支持结构化编辑")
+	}
+	end := -1
+	for i := 1; i < len(lines); i++ {
+		if strings.TrimRight(lines[i], "\r") == delim {
+			end = i
+			break
+		}
+	}
+	if end == -1 {
+		return errors.New("front matter 格式不完整（缺少结束分隔符）")
+	}
+	toml := fmFmt == "toml"
+	lineFor := func(k, v string) string {
+		if toml {
+			return k + " = " + v
+		}
+		return k + ": " + v
+	}
+	quote := func(s string) string { return strconv.Quote(s) } // YAML/TOML 双引号字符串通用
+
+	fm := make([]string, 0, end)
+	for _, ln := range lines[1:end] {
+		fm = append(fm, strings.TrimRight(ln, "\r")) // 行尾 \r 归一，之后统一按 eol 重组
+	}
+	// 标量字段：draft/date 裸写（布尔 / TOML 日期时间合法），其余加引号
+	for _, k := range []string{"title", "date", "draft", "slug", "description", "summary"} {
+		v, ok := fields[k]
+		if !ok || v == "" {
+			continue
+		}
+		val := quote(v)
+		if k == "draft" || k == "date" {
+			val = v
+		}
+		fm = setLine(fm, k, lineFor(k, val))
+	}
+	// 数组字段：空数组 = 删除该行
+	for _, k := range []string{"tags", "categories"} {
+		v, ok := arrays[k]
+		if !ok {
+			continue
+		}
+		if len(v) == 0 {
+			fm = delLine(fm, k)
+			continue
+		}
+		parts := make([]string, len(v))
+		for i, t := range v {
+			parts[i] = quote(t)
+		}
+		fm = setLine(fm, k, lineFor(k, "["+strings.Join(parts, ", ")+"]"))
+	}
+
+	newLines := append([]string{first}, fm...)
+	newLines = append(newLines, delim)
+	newLines = append(newLines, strings.Split(normalizeEOL(body), "\n")...)
+	out := strings.Join(newLines, "\n")
+	out = strings.ReplaceAll(out, "\n", eol)
+	if !strings.HasSuffix(out, eol) {
+		out += eol
+	}
+	if bom {
+		out = "\uFEFF" + out
+	}
+	return os.WriteFile(p, []byte(out), 0o644)
+}
+
+// normalizeEOL 把 CRLF / 孤立 CR 统一为 LF。
+func normalizeEOL(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	return strings.ReplaceAll(s, "\r", "\n")
+}
+
+func keyLineRe(key string) *regexp.Regexp {
+	return regexp.MustCompile(`^` + regexp.QuoteMeta(key) + `\s*[:=]`)
+}
+
+// setLine 替换 key 所在行；不存在则追加到 front matter 末尾。
+func setLine(lines []string, key, line string) []string {
+	re := keyLineRe(key)
+	for i, ln := range lines {
+		if re.MatchString(ln) {
+			lines[i] = line
+			return lines
+		}
+	}
+	return append(lines, line)
+}
+
+func delLine(lines []string, key string) []string {
+	re := keyLineRe(key)
+	out := lines[:0]
+	for _, ln := range lines {
+		if !re.MatchString(ln) {
+			out = append(out, ln)
+		}
+	}
+	return out
+}
+
+// listPosts 扫描 content/ 下全部 Markdown 文件（跳过隐藏目录）。
+func listPosts(siteDir string) ([]Post, error) {
+	root := filepath.Join(siteDir, "content")
+	var posts []Post
+	if _, err := os.Stat(root); err != nil {
+		return posts, nil // 无 content 目录 → 空列表
+	}
+	_ = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if strings.HasPrefix(d.Name(), ".") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		name := d.Name()
+		if !strings.HasSuffix(name, ".md") && !strings.HasSuffix(name, ".markdown") {
+			return nil
+		}
+		rel, _ := filepath.Rel(siteDir, p)
+		rel = filepath.ToSlash(rel)
+		_, fields, _, _, _, _ := parsePost(p)
+		title := fields["title"]
+		if title == "" { // 无标题时用文件名兜底
+			base := strings.TrimSuffix(name, filepath.Ext(name))
+			title = strings.NewReplacer("-", " ", "_", " ").Replace(base)
+		}
+		post := Post{
+			Path: rel, Title: title,
+			Draft: fields["draft"] == "true",
+			Date:  fields["date"],
+		}
+		parts := strings.Split(rel, "/")
+		if len(parts) > 2 {
+			post.Section = parts[1]
+		}
+		switch name {
+		case "_index.md":
+			post.Kind = "section"
+		case "index.md":
+			post.Kind = "bundle"
+		}
+		posts = append(posts, post)
+		return nil
+	})
+	sort.Slice(posts, func(i, j int) bool {
+		di, dj := posts[i].Date, posts[j].Date
+		if di == "" {
+			return false
+		}
+		if dj == "" {
+			return true
+		}
+		return di > dj // 日期倒序，最新在前
+	})
+	return posts, nil
+}
+
+// siteInfo 从站点配置文件（hugo.toml/config.toml/...）尽力读出标题与 baseURL。
+func siteInfo(siteDir string) (title, baseURL string) {
+	names := []string{"hugo.toml", "hugo.yaml", "hugo.yml", "config.toml", "config.yaml", "config.yml", "hugo.json", "config.json"}
+	for _, n := range names {
+		b, err := os.ReadFile(filepath.Join(siteDir, n))
+		if err != nil {
+			continue
+		}
+		s := string(b)
+		title = pick(s, []string{
+			`(?m)^\s*title\s*=\s*"([^"]*)"`,
+			`(?m)^\s*"title"\s*:\s*"([^"]*)"`,
+			`(?m)^\s*title\s*:\s*["']?([^"'\r\n#]+?)["']?\s*$`,
+		})
+		baseURL = pick(s, []string{
+			`(?m)^\s*baseURL\s*=\s*"([^"]*)"`,
+			`(?m)^\s*"baseURL"\s*:\s*"([^"]*)"`,
+			`(?m)^\s*baseURL\s*:\s*["']?([^"'\r\n#]+?)["']?\s*$`,
+		})
+		return
+	}
+	return
+}
+
+func pick(s string, patterns []string) string {
+	for _, pat := range patterns {
+		if m := regexp.MustCompile(pat).FindStringSubmatch(s); m != nil {
+			return strings.TrimSpace(m[1])
+		}
+	}
+	return ""
+}
