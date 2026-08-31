@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-const fixitCoreTotal = 24
+const fixitCoreTotal = 25
 
 type scoreKeeper struct {
 	t     *testing.T
@@ -203,6 +203,24 @@ func TestFixItScore(t *testing.T) {
 	got = readFile(t, p)
 	s.ck("toml.saveScalar", strings.Contains(got, `subtitle = "新副标"`) && strings.Contains(got, "weight = 8\n") && strings.Contains(got, "date = 2024-02-01T09:00:00+08:00"))
 	s.ck("toml.keepTable", strings.Contains(got, "[repost]\nenable = false\nurl = \"\""))
+	// ---- hugo new 原型（FixIt 站点应默认用 posts 原型）----
+	newSite := copySite(t, site)
+	if out, err := exec.Command("cmd", "/c", "mklink", "/J",
+		filepath.Join(newSite, "themes"), themesDir).CombinedOutput(); err != nil {
+		t.Logf("mklink: %v %s", err, out)
+		s.ck("newcontent.fixitKind", false)
+	} else {
+		a2 := NewApp(filepath.Join(t.TempDir(), "config.json"))
+		a2.SetConfig(Config{SiteDir: newSite, HugoBin: hugoBin})
+		if err := a2.NewContent("posts/kind-check.md", "", "原型检查"); err != nil {
+			t.Logf("NewContent: %v", err)
+			s.ck("newcontent.fixitKind", false)
+		} else {
+			nc := readFile(t, filepath.Join(newSite, "content", "posts", "kind-check.md"))
+			s.ck("newcontent.fixitKind", strings.Contains(nc, "featured_image:"))
+		}
+	}
+
 	// ---- 端到端：真实主题构建 ----
 	s.ck("e2e.buildPristine", hugoBuild(t, hugoBin, copySite(t, site), themesDir, filepath.Join(t.TempDir(), "public")))
 
