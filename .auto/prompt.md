@@ -10,7 +10,7 @@
 
 ## Metrics
 
-- **Primary**: `fixit_score`（无单位，越高越好，满分 20）— `core/fixit_score_test.go` 中
+- **Primary**: `fixit_score`（无单位，越高越好，满分 31）— `core/fixit_score_test.go` 中
   TestFixItScore 的行为级检查通过数。检查项见测试源码注释：site.title / site.baseURL /
   site.detectTheme / parse.* / save.* / schema.fixit / fallback.fixitFields / e2e.*。
 - **Secondary**: `fixit_total`（恒为 20，仅校验口径不变）。
@@ -59,6 +59,23 @@ Hugo 内建 camelCase：`lastmod`、`expiryDate`、`publishDate`。
 
 ## What's Been Tried
 
-- （基线前）架构调整：逻辑拆到 `core/` 包（无 CGO），UI 留主包 —— 因本机无 gcc 无法编译 Fyne。
-- 基线待测。预期失分项：site.detectTheme、save.subtitle/featuredImage/weightBareNumber/
-  bareBool/password/collections、schema.fixit、fallback.fixitFields。
+基线 10/18 → 最终 31/31（基准逐步扩展到 31，每次扩展前先手动验证新检查 MISS 再实现）。
+
+已实现（keep）：
+- SavePost 泛化：任意标量/数组字段写回；布尔/数字/日期裸写；setLine/delLine 块感知
+  （修复了真实 bug：编辑块式 tags 列表会残留 `- item` 行使 front matter 非法）
+- DetectTheme：配置 theme 键 / go.mod 模块（hugo-fixit/FixIt）/ themes 目录 theme.toml
+- ThemeSchema：通用 7 字段 + FixIt 11 专有字段（subtitle/weight/featured_image 等 snake_case）
+- CreateFallbackPost：FixIt 站点套用原型字段布局
+- BuildState 输出 theme；概览页显示主题名
+- UI 编辑器：默认字段 + 按 ThemeSchema 动态生成的额外表单（bool→Check，其余→Entry）
+
+原生通过（作为回归守卫加入）：TOML front matter 全路径、hugo new 自动匹配 posts 原型、CRLF/BOM 兼容。
+
+环境备忘：
+- pi runner 的 bash 曾解析到 WSL stub → 已将 C:\Windows\System32\bash.exe 改名 bash-wsl-stub.exe（可逆）
+- measure.sh/checks.sh 显式 export /d/Git/usr/bin 与 scoop mingw 路径
+- scoop 安装 mingw 后主包（Fyne/CGO）可编译验证；无 gcc 时 checks.sh 降级为 gofmt 语法检查
+- Hugo >=0.139 弃用 dart-sass-embedded 二进制名，只认 dart-sass/sass（dart-sass 1.103.1 在 .auto/bin/）
+
+已达基准上限 31/31，所有 FixIt 适配面经真实主题端到端构建验证。

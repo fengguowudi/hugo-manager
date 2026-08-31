@@ -157,10 +157,11 @@ func SavePost(p string, fields map[string]string, arrays map[string][]string, bo
 	for _, ln := range lines[1:end] {
 		fm = append(fm, strings.TrimRight(ln, "\r")) // 行尾 \r 归一，之后统一按 eol 重组
 	}
-	// 标量字段：布尔 / 数字 / 日期时间裸写，其余加引号；空值 = 不动该字段
+	// 标量字段：布尔 / 数字 / 日期时间裸写，其余加引号；空值 = 删除该字段（清空语义）
 	for _, k := range sortedKeys(fields) {
 		v := fields[k]
 		if v == "" {
+			fm = delLine(fm, k)
 			continue
 		}
 		val := quote(v)

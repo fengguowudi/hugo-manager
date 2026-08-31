@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-const fixitCoreTotal = 27
+const fixitCoreTotal = 29
 
 type scoreKeeper struct {
 	t     *testing.T
@@ -136,6 +136,21 @@ func TestFixItScore(t *testing.T) {
 	s.ck("save.keepOthers", strings.Contains(got, `title: "改名后"`) && strings.Contains(got, "subtitle: 第一篇文章"))
 	s.ck("save.keepNestedMap", strings.Contains(got, "repost:\n  enable: false"))
 	s.ck("save.keepBlockList", strings.Contains(got, "keywords:\n  - Hugo\n  - FixIt"))
+
+	// r1b: 显式传空字符串 = 删除该字段（编辑器清空语义）
+	p = copyPost(t, site, helloRel)
+	if err := SavePost(p, map[string]string{"subtitle": ""}, nil, "正文不变。\n"); err != nil {
+		t.Fatal(err)
+	}
+	got = readFile(t, p)
+	s.ck("save.clearScalar", !strings.Contains(got, "subtitle") && strings.Contains(got, "date: 2024-01-15T10:00:00+08:00"))
+
+	p = copyPost(t, site, lockedRel)
+	if err := SavePost(p, map[string]string{"password": "", "message": ""}, nil, "正文不变。\n"); err != nil {
+		t.Fatal(err)
+	}
+	got = readFile(t, p)
+	s.ck("save.clearPassword", !strings.Contains(got, "password:") && !strings.Contains(got, "message:") && strings.Contains(got, "weight: 5"))
 
 	// r2: 编辑 FixIt 专有字段（通用标量）
 	p = copyPost(t, site, helloRel)
