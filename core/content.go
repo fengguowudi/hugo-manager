@@ -75,6 +75,24 @@ func ParsePost(p string) (fmFmt string, fields map[string]string, arrays map[str
 			continue
 		}
 		k, v := m[1], strings.TrimSpace(m[2])
+		if v == "" { // 块式列表（YAML）：key: 后跟若干 - item 行
+			// ponytail: 只认缩进的 "- " 项（最常见的写法）；不处理顶格列表项或 - key: value 映射项
+			var items []string
+			for i+1 < end {
+				t := strings.TrimSpace(strings.TrimRight(lines[i+1], "\r"))
+				if t != "-" && !strings.HasPrefix(t, "- ") {
+					break
+				}
+				i++
+				if item := strings.TrimSpace(strings.TrimPrefix(t, "-")); item != "" {
+					items = append(items, unquote(item))
+				}
+			}
+			if len(items) > 0 {
+				arrays[k] = items
+				continue
+			}
+		}
 		if strings.HasPrefix(v, "[") && !strings.HasSuffix(v, "]") {
 			// 多行行内数组（TOML 常见）：累积到 ] 闭合
 			for i+1 < end {

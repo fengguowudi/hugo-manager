@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-const fixitCoreTotal = 32
+const fixitCoreTotal = 34
 
 type scoreKeeper struct {
 	t     *testing.T
@@ -126,6 +126,28 @@ func TestFixItScore(t *testing.T) {
 	}
 	s.ck("parse.inlineTags", strings.Join(la["tags"], ",") == "secret,pinned")
 	s.ck("parse.hiddenFromHomePage", lf["hidden_from_home_page"] == "true")
+
+	// p5: YAML 块式列表（FixIt 原型默认写法）应解析为数组
+	_, _, ha, _, _, err := ParsePost(filepath.Join(site, helloRel))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.ck("parse.blockList", strings.Join(ha["tags"], ",") == "hugo,fixit" &&
+		strings.Join(ha["keywords"], ",") == "Hugo,FixIt" && strings.Join(ha["collections"], ",") == "随笔")
+
+	// p6: 块式列表解析→写回往返不丢数据（转为行内是文档化行为）
+	bp := copyPost(t, site, helloRel)
+	if err := SavePost(bp, nil, map[string][]string{"tags": ha["tags"], "keywords": ha["keywords"]}, "正文不变。\n"); err != nil {
+		t.Fatal(err)
+	}
+	bgot := readFile(t, bp)
+	_, _, ra, _, _, err := ParsePost(bp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.ck("save.blockListRoundTrip", strings.Contains(bgot, `tags: ["hugo", "fixit"]`) &&
+		strings.Contains(bgot, `keywords: ["Hugo", "FixIt"]`) && !strings.Contains(bgot, "  - hugo") &&
+		strings.Join(ra["tags"], ",") == "hugo,fixit")
 
 	// ---- 写回（外科手术式）----
 	// r1: 改标题，不动其余字段
