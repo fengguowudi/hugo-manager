@@ -343,26 +343,42 @@ func delLine(lines []string, key string) []string {
 
 // ListPosts 扫描各语言内容目录（ContentRoots）下全部 Markdown 文件（跳过隐藏目录）。
 func ListPosts(siteDir string) ([]Post, error) {
+	roots := ContentRoots(siteDir)
 	var posts []Post
-	for _, rootRel := range ContentRoots(siteDir) {
-		posts = append(posts, listPostsIn(siteDir, rootRel)...)
+	for _, rootRel := range roots {
+		posts = append(posts, listPostsIn(siteDir, rootRel, roots)...)
 	}
 	sortPosts(posts)
 	return posts, nil
 }
 
 // listPostsIn 扫描单个内容根；Section 取相对于该内容根的第一级目录。
-func listPostsIn(siteDir, rootRel string) []Post {
+// 扫描父根时跳过另一个已声明的嵌套根，避免同一文章重复读取。
+func listPostsIn(siteDir, rootRel string, allRoots []string) []Post {
 	root := filepath.Join(siteDir, filepath.FromSlash(rootRel))
 	var posts []Post
 	if _, err := os.Stat(root); err != nil {
 		return posts // 无此内容目录 → 空列表
+	}
+	nestedRoots := map[string]bool{}
+	for _, other := range allRoots {
+		if other == rootRel {
+			continue
+		}
+		otherPath := filepath.Join(siteDir, filepath.FromSlash(other))
+		rel, err := filepath.Rel(root, otherPath)
+		if err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			nestedRoots[filepath.Clean(otherPath)] = true
+		}
 	}
 	_ = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
 		if d.IsDir() {
+			if nestedRoots[filepath.Clean(p)] {
+				return filepath.SkipDir
+			}
 			if strings.HasPrefix(d.Name(), ".") {
 				return filepath.SkipDir
 			}

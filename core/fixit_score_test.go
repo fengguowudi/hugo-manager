@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-const fixitCoreTotal = 48
+const fixitCoreTotal = 49
 
 type scoreKeeper struct {
 	t     *testing.T
@@ -147,6 +147,15 @@ func TestFixItScore(t *testing.T) {
 		}
 	}
 	s.ck("list.multiLang", foundEN)
+	seenPaths := map[string]bool{}
+	duplicatePath := false
+	for _, p := range allPosts {
+		if seenPaths[p.Path] {
+			duplicatePath = true
+		}
+		seenPaths[p.Path] = true
+	}
+	s.ck("list.noDuplicateRoots", !duplicatePath)
 
 	// YAML 配置同样支持独立语言 contentDir
 	yamlSite := t.TempDir()

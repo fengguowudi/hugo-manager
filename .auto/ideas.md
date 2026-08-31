@@ -1,5 +1,6 @@
 # Ideas backlog（FixIt 适配）
 
-- [暂缓] ThemeSchema 增加 FixIt 页面级开关字段：math / toc / comment / lightgallery（theme.Params 均支持）。
-  价值=编辑器多出几个开关；检查方式只能是"schema 含键"（弱检查），需要时直接往 fixit.go 的 FixIt 分支加。
-- [已知限制] SavePost 语义"空值=不动该字段"，UI 无法清空已有标量字段（防误删 title）。
+- [候选] 友链添加 UI：core.AddFriend / ValidateFriend 已完成，概览卡片已可见；只有明确需要时再加 dialog 表单。
+- [需独立度量] content/ 扫描性能：当前 ListPosts 会读取每篇文章完整内容；如切换为性能目标，应重新 init_experiment，以扫描耗时/内存为主指标，不把阈值硬塞进功能分。
+- [已知边界] 多语言配置支持站点根目录的 TOML/YAML；尚未合并 config/ 目录拆分配置和环境配置层，收益不足时不要扩面。
+- [低优先] expiryDate 到期前预警；当前已覆盖已过期/定时未到的确定状态。
