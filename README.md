@@ -7,9 +7,9 @@
 ## 快速开始
 
 ```sh
-go build -o hugo-manager.exe .       # Windows
-go build -o hugo-manager .            # Linux
-go build -o hugo-manager .            # macOS（建议在 macOS 上构建）
+go build -ldflags "-H=windowsgui" -o hugo-manager.exe .  # Windows，不显示控制台窗口
+go build -o hugo-manager .                              # Linux
+go build -o hugo-manager .                              # macOS（建议在 macOS 上构建）
 ```
 
 ## 必填配置（首次启动在「设置」页完成）
