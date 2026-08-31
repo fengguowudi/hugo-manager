@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-const fixitCoreTotal = 46
+const fixitCoreTotal = 48
 
 type scoreKeeper struct {
 	t     *testing.T
@@ -147,6 +147,43 @@ func TestFixItScore(t *testing.T) {
 		}
 	}
 	s.ck("list.multiLang", foundEN)
+
+	// YAML 配置同样支持独立语言 contentDir
+	yamlSite := t.TempDir()
+	for _, d := range []string{"content/zh-cn/posts", "content/en/posts", "archetypes"} {
+		if err := os.MkdirAll(filepath.Join(yamlSite, filepath.FromSlash(d)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	yamlConfig := "title: YAML multilingual\ndefaultContentLanguage: zh-cn\nlanguages:\n  zh-cn:\n    contentDir: content/zh-cn\n  en:\n    contentDir: content/en\n"
+	if err := os.WriteFile(filepath.Join(yamlSite, "hugo.yaml"), []byte(yamlConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for rel, title := range map[string]string{"content/zh-cn/posts/zh.md": "中文 YAML", "content/en/posts/en.md": "English YAML"} {
+		body := "---\ntitle: " + title + "\ndate: 2024-01-01T00:00:00+08:00\n---\n\nbody\n"
+		if err := os.WriteFile(filepath.Join(yamlSite, filepath.FromSlash(rel)), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	archetype := "---\ntitle: \"{{ .File.ContentBaseName }}\"\ndraft: true\n---\n"
+	if err := os.WriteFile(filepath.Join(yamlSite, "archetypes", "default.md"), []byte(archetype), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	yamlPosts, _ := ListPosts(yamlSite)
+	yamlFound := map[string]bool{}
+	for _, p := range yamlPosts {
+		if p.Section == "posts" {
+			yamlFound[p.Title] = true
+		}
+	}
+	s.ck("list.multiLangYAML", DefaultContentDir(yamlSite) == "content/zh-cn" && yamlFound["中文 YAML"] && yamlFound["English YAML"])
+
+	yamlApp := NewApp(filepath.Join(t.TempDir(), "config.json"))
+	yamlApp.SetConfig(Config{SiteDir: yamlSite, HugoBin: hugoBin})
+	yamlNewErr := yamlApp.NewContent("posts/yaml-new.md", "", "YAML New")
+	_, yamlDefaultErr := os.Stat(filepath.Join(yamlSite, "content", "zh-cn", "posts", "yaml-new.md"))
+	_, yamlWrongErr := os.Stat(filepath.Join(yamlSite, "content", "en", "posts", "yaml-new.md"))
+	s.ck("newcontent.yamlDefaultDir", yamlNewErr == nil && yamlDefaultErr == nil && os.IsNotExist(yamlWrongErr))
 
 	// ---- 解析 ----
 	helloRel := filepath.Join("content", "posts", "hello-fixit.md")

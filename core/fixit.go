@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Field 描述一个可结构化编辑的 front matter 字段。
@@ -126,18 +128,18 @@ func semverLess(a, b string) bool {
 }
 
 // ---- 多语言站点（languages.*.contentDir）----
-// ponytail: 只解析 TOML 配置的首个配置文件；YAML 配置或 config/ 目录拆分的站点需要时再加。
+// 支持站点根目录的 TOML/YAML 配置；config/ 目录拆分配置需要时再扩展。
 
 var reDefaultLang = regexp.MustCompile(`(?m)^\s*defaultContentLanguage\s*=\s*"([^"]+)"`)
 var reContentDirKV = regexp.MustCompile(`(?m)^\s*contentDir\s*=\s*"([^"]+)"`)
 
-func readSiteConfig(siteDir string) string {
+func readSiteConfigFile(siteDir string) (name, content string) {
 	for _, n := range []string{"hugo.toml", "config.toml", "hugo.yaml", "hugo.yml", "config.yaml", "config.yml"} {
 		if b, err := os.ReadFile(filepath.Join(siteDir, n)); err == nil {
-			return string(b)
+			return n, string(b)
 		}
 	}
-	return ""
+	return "", ""
 }
 
 // tomlSection 返回 TOML 顶级 section 的正文；避免依赖 RE2 不支持的 lookahead。
@@ -160,44 +162,91 @@ func tomlSection(s, name string) string {
 	return body.String()
 }
 
-// DefaultContentDir 返回默认语言的内容目录（单语言站点为 "content"）。
-func DefaultContentDir(siteDir string) string {
-	s := readSiteConfig(siteDir)
-	m := reDefaultLang.FindStringSubmatch(s)
-	if m == nil {
-		return "content"
-	}
-	if body := tomlSection(s, "languages."+m[1]); body != "" {
-		if cm := reContentDirKV.FindStringSubmatch(body); cm != nil {
-			return strings.Trim(cm[1], "/")
-		}
-	}
-	return "content"
+type yamlLanguageConfig struct {
+	ContentDir string `yaml:"contentDir"`
 }
 
-// ContentRoots 返回所有需扫描的内容目录：默认语言目录 + 各语言自定义 contentDir（去重）。
-func ContentRoots(siteDir string) []string {
-	seen := map[string]bool{}
-	var roots []string
-	add := func(d string) {
-		d = strings.Trim(d, "/")
-		if d != "" && !seen[d] {
-			seen[d] = true
-			roots = append(roots, d)
+type yamlSiteLanguageConfig struct {
+	DefaultContentLanguage string                        `yaml:"defaultContentLanguage"`
+	Languages              map[string]yamlLanguageConfig `yaml:"languages"`
+}
+
+// languageContentDirs 返回默认语言目录及所有显式语言目录。
+func languageContentDirs(siteDir string) (string, []string) {
+	name, s := readSiteConfigFile(siteDir)
+	if strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml") {
+		var cfg yamlSiteLanguageConfig
+		if yaml.Unmarshal([]byte(s), &cfg) == nil {
+			defaultLang := cfg.DefaultContentLanguage
+			if defaultLang == "" {
+				defaultLang = "en" // Hugo 默认语言
+			}
+			defaultDir := "content"
+			if lang, ok := cfg.Languages[defaultLang]; ok && strings.TrimSpace(lang.ContentDir) != "" {
+				defaultDir = lang.ContentDir
+			}
+			var explicit []string
+			for _, lang := range cfg.Languages {
+				if strings.TrimSpace(lang.ContentDir) != "" {
+					explicit = append(explicit, lang.ContentDir)
+				}
+			}
+			return defaultDir, explicit
 		}
 	}
-	add(DefaultContentDir(siteDir))
-	s := readSiteConfig(siteDir)
+
+	defaultDir := "content"
+	if m := reDefaultLang.FindStringSubmatch(s); m != nil {
+		if body := tomlSection(s, "languages."+m[1]); body != "" {
+			if cm := reContentDirKV.FindStringSubmatch(body); cm != nil {
+				defaultDir = cm[1]
+			}
+		}
+	}
+	var explicit []string
 	for _, line := range strings.Split(s, "\n") {
 		trimmed := strings.TrimSpace(strings.TrimRight(line, "\r"))
 		if strings.HasPrefix(trimmed, "[languages.") && strings.HasSuffix(trimmed, "]") {
 			section := strings.TrimSuffix(strings.TrimPrefix(trimmed, "["), "]")
 			if body := tomlSection(s, section); body != "" {
 				if cm := reContentDirKV.FindStringSubmatch(body); cm != nil {
-					add(cm[1])
+					explicit = append(explicit, cm[1])
 				}
 			}
 		}
+	}
+	return defaultDir, explicit
+}
+
+func cleanContentDir(d string) string {
+	d = filepath.ToSlash(strings.TrimSpace(d))
+	return strings.Trim(d, "/")
+}
+
+// DefaultContentDir 返回默认语言的内容目录（单语言站点为 "content"）。
+func DefaultContentDir(siteDir string) string {
+	d, _ := languageContentDirs(siteDir)
+	if d = cleanContentDir(d); d != "" {
+		return d
+	}
+	return "content"
+}
+
+// ContentRoots 返回所有需扫描的内容目录：默认语言目录 + 各语言自定义 contentDir（去重）。
+func ContentRoots(siteDir string) []string {
+	defaultDir, explicit := languageContentDirs(siteDir)
+	seen := map[string]bool{}
+	var roots []string
+	add := func(d string) {
+		d = cleanContentDir(d)
+		if d != "" && !seen[d] {
+			seen[d] = true
+			roots = append(roots, d)
+		}
+	}
+	add(defaultDir)
+	for _, d := range explicit {
+		add(d)
 	}
 	return roots
 }
