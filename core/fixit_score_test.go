@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-const fixitCoreTotal = 49
+const fixitCoreTotal = 52
 
 type scoreKeeper struct {
 	t     *testing.T
@@ -210,6 +210,53 @@ func TestFixItScore(t *testing.T) {
 	}
 	s.ck("parse.inlineTags", strings.Join(la["tags"], ",") == "secret,pinned")
 	s.ck("parse.hiddenFromHomePage", lf["hidden_from_home_page"] == "true")
+
+	// p5: YAML/TOML 行尾注释不能污染字段语义，尤其不能把 draft:true 变成 false
+	commentSite := t.TempDir()
+	commentDir := filepath.Join(commentSite, "content", "posts")
+	if err := os.MkdirAll(commentDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	yamlCommentPath := filepath.Join(commentDir, "commented-draft.md")
+	yamlComment := "---\ntitle: \"Secret #1\" # editorial note\ndate: 2024-01-01T00:00:00+08:00\ndraft: true # must stay private\ntags: [\"internal\", \"tag#1\"] # classification\ndescription: https://example.com/#anchor\n---\n\nSECRET\n"
+	if err := os.WriteFile(yamlCommentPath, []byte(yamlComment), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, ycf, yca, _, _, err := ParsePost(yamlCommentPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.ck("parse.inlineComments", ycf["title"] == "Secret #1" && ycf["draft"] == "true" &&
+		ycf["description"] == "https://example.com/#anchor" && strings.Join(yca["tags"], ",") == "internal,tag#1")
+
+	draftValue := "false"
+	if ycf["draft"] == "true" {
+		draftValue = "true"
+	}
+	if err := SavePost(yamlCommentPath, map[string]string{"title": ycf["title"], "date": ycf["date"], "draft": draftValue, "description": ycf["description"]}, map[string][]string{"tags": yca["tags"]}, "UPDATED\n"); err != nil {
+		t.Fatal(err)
+	}
+	yamlSaved := readFile(t, yamlCommentPath)
+	_, ycf2, yca2, _, _, err := ParsePost(yamlCommentPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commentPosts, _ := ListPosts(commentSite)
+	stillDraft := len(commentPosts) == 1 && commentPosts[0].Draft
+	s.ck("save.inlineComments", stillDraft && ycf2["title"] == "Secret #1" && ycf2["draft"] == "true" &&
+		strings.Join(yca2["tags"], ",") == "internal,tag#1" && strings.Contains(yamlSaved, "# must stay private") &&
+		strings.Contains(yamlSaved, "# editorial note") && strings.Contains(yamlSaved, "# classification"))
+
+	tomlCommentPath := filepath.Join(commentDir, "commented-toml.md")
+	tomlComment := "+++\ntitle = \"Secret #2\" # editorial note\ndate = 2024-01-02T00:00:00+08:00\ndraft = true # must stay private\ntags = [\"internal\", \"tag#2\"] # classification\n+++\n\nSECRET TOML\n"
+	if err := os.WriteFile(tomlCommentPath, []byte(tomlComment), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, tcf, tca, _, _, err := ParsePost(tomlCommentPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.ck("toml.inlineComments", tcf["title"] == "Secret #2" && tcf["draft"] == "true" && strings.Join(tca["tags"], ",") == "internal,tag#2")
 
 	// p5: YAML 块式列表（FixIt 原型默认写法）应解析为数组
 	_, _, ha, _, _, err := ParsePost(filepath.Join(site, helloRel))

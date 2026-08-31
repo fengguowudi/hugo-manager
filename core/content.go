@@ -103,12 +103,13 @@ func ParsePost(p string) (fmFmt string, fields map[string]string, arrays map[str
 		if m == nil {
 			continue
 		}
-		k, v := m[1], strings.TrimSpace(m[2])
+		k := m[1]
+		v, _ := splitInlineComment(strings.TrimSpace(m[2]), fmFmt == "toml")
 		if v == "" { // 块式列表（YAML）：key: 后跟若干 - item 行
 			// ponytail: 只认缩进的 "- " 项（最常见的写法）；不处理顶格列表项或 - key: value 映射项
 			var items []string
 			for i+1 < end {
-				t := strings.TrimSpace(strings.TrimRight(lines[i+1], "\r"))
+				t, _ := splitInlineComment(strings.TrimSpace(strings.TrimRight(lines[i+1], "\r")), false)
 				if t != "-" && !strings.HasPrefix(t, "- ") {
 					break
 				}
@@ -126,7 +127,8 @@ func ParsePost(p string) (fmFmt string, fields map[string]string, arrays map[str
 			// 多行行内数组（TOML 常见）：累积到 ] 闭合
 			for i+1 < end {
 				i++
-				v += strings.TrimSpace(strings.TrimRight(lines[i], "\r"))
+				part, _ := splitInlineComment(strings.TrimSpace(strings.TrimRight(lines[i], "\r")), fmFmt == "toml")
+				v += part
 				if strings.HasSuffix(v, "]") {
 					break
 				}
@@ -164,6 +166,51 @@ func unquote(v string) string {
 		return strings.NewReplacer(`\"`, `"`, `\'`, `'`, `\\`, `\`).Replace(inner)
 	}
 	return v
+}
+
+// splitInlineComment 分离 front matter 值与引号外的 # 行尾注释。
+// YAML 的 # 仅在行首或前有空白时视为注释（保留 URL#fragment / C#）；TOML 在引号外即为注释。
+func splitInlineComment(s string, toml bool) (value, comment string) {
+	var quote byte
+	escaped := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if quote != 0 {
+			if quote == '"' && c == '\\' {
+				escaped = true
+				continue
+			}
+			if c == quote {
+				quote = 0
+			}
+			continue
+		}
+		if c == '"' || c == '\'' {
+			quote = c
+			continue
+		}
+		if c == '#' && (toml || i == 0 || s[i-1] == ' ' || s[i-1] == '\t') {
+			start := i
+			for start > 0 && (s[start-1] == ' ' || s[start-1] == '\t') {
+				start--
+			}
+			return strings.TrimSpace(s[:start]), s[start:]
+		}
+	}
+	return strings.TrimSpace(s), ""
+}
+
+func inlineCommentSuffix(line string) string {
+	i := strings.IndexAny(line, ":=")
+	if i < 0 {
+		return ""
+	}
+	_, comment := splitInlineComment(line[i+1:], line[i] == '=')
+	return comment
 }
 
 // SavePost 结构化保存：仅改写被编辑字段所在行，正文整体替换，其余保留。
@@ -324,6 +371,9 @@ func setLine(lines []string, key, line string) []string {
 	re := keyLineRe(key)
 	for i, ln := range lines {
 		if re.MatchString(ln) {
+			if suffix := inlineCommentSuffix(ln); suffix != "" {
+				line += suffix
+			}
 			return append(lines[:i], append([]string{line}, lines[blockEnd(lines, i):]...)...)
 		}
 	}
