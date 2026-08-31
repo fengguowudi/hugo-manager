@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+export PATH="/d/Git/usr/bin:/d/Git/mingw64/bin:/usr/bin:$PATH"
 cd "$(dirname "$0")/.."
 go vet ./core
 go build ./core

@@ -108,7 +108,7 @@ func TestFixItScore(t *testing.T) {
 
 	// ---- 解析 ----
 	helloRel := filepath.Join("content", "posts", "hello-fixit.md")
-	_, fields, arrays, _, _, err := ParsePost(filepath.Join(site, helloRel))
+	_, fields, _, _, _, err := ParsePost(filepath.Join(site, helloRel))
 	if err != nil {
 		t.Fatal(err)
 	}
