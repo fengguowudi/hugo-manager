@@ -175,6 +175,9 @@ func (ui *nativeUI) overview() fyne.CanvasObject {
 		if n, _ := st["countEncrypted"].(int); n > 0 {
 			text += fmt.Sprintf("\n🔒 加密文章 %d 篇：含 password 的内容构建后需执行 npx @hugo-fixit/encrypt 才会真正加密", n)
 		}
+		if n, _ := st["countExpired"].(int); n > 0 {
+			text += fmt.Sprintf("\n⏳ 已过期文章 %d 篇：expiryDate 已过，Hugo 构建不会发布它们", n)
+		}
 		info.SetText(text)
 	}
 	update()
@@ -205,6 +208,12 @@ func (ui *nativeUI) content() fyne.CanvasObject {
 		state := "已发布"
 		if p.Draft {
 			state = "草稿"
+		}
+		if p.Expired {
+			state += "·已过期"
+		}
+		if p.Encrypted {
+			state += "·加密"
 		}
 		label.SetText(fmt.Sprintf("%s  [%s]\n%s", fallback(p.Title, "(无标题)"), state, p.Path))
 		label.Wrapping = fyne.TextWrapWord

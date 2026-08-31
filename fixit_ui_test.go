@@ -1,7 +1,7 @@
 package main
 
 // FixIt 主题 UI 层适配基准：编辑器按 ThemeSchema 渲染主题专有字段，
-// 并能无损往返（填入 → 收集）。输出 METRIC fixit_ui=N（共 6 分）。
+// 并能无损往返（填入 → 收集）。输出 METRIC fixit_ui=N（共 7 分）。
 
 import (
 	"fmt"
@@ -103,6 +103,9 @@ func TestFixItUI(t *testing.T) {
 
 	// u5: 概览提示加密文章（fixture 有 1 篇 password 文章）
 	ck("ui.encryptHint", strings.Contains(texts.String(), "加密文章"))
+
+	// u6: 概览提示已过期文章（fixture 有 1 篇 expiryDate 已过）
+	ck("ui.expiredHint", strings.Contains(texts.String(), "已过期"))
 	fmt.Printf("METRIC fixit_ui=%d\n", score)
 }
 

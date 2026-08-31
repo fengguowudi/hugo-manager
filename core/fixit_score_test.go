@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-const fixitCoreTotal = 34
+const fixitCoreTotal = 35
 
 type scoreKeeper struct {
 	t     *testing.T
@@ -109,6 +109,7 @@ func TestFixItScore(t *testing.T) {
 	a.SetConfig(Config{SiteDir: site})
 	s.ck("state.theme", a.BuildState()["theme"] == "FixIt")
 	s.ck("state.encryptedCount", a.BuildState()["countEncrypted"] == 1) // locked-weighted.md 有 password
+	s.ck("state.expiredCount", a.BuildState()["countExpired"] == 1)     // expired.md 的 expiryDate 已过
 
 	// ---- 解析 ----
 	helloRel := filepath.Join("content", "posts", "hello-fixit.md")
@@ -223,7 +224,6 @@ func TestFixItScore(t *testing.T) {
 	}
 	fb := readFile(t, filepath.Join(tmpSite, "content", "posts", "fallback-check.md"))
 	s.ck("fallback.fixitFields", strings.Contains(fb, "subtitle:") && strings.Contains(fb, "featured_image:"))
-
 
 	// ---- TOML front matter（FixIt 同样支持）----
 	tomlRel := filepath.Join("content", "posts", "toml-post.md")
