@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Post 列表页需要的文章摘要信息。
@@ -60,6 +62,53 @@ var (
 	reTomlKV = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_-]*)\s*=\s*(.*)$`)
 )
 
+func derefYAMLNode(n *yaml.Node) *yaml.Node {
+	for n != nil && n.Kind == yaml.AliasNode && n.Alias != nil {
+		n = n.Alias
+	}
+	return n
+}
+
+// parseYAMLFields 用正规 YAML 解析器读取根标量和标量序列；嵌套 map 保持原文、交给写回层原样保留。
+func parseYAMLFields(src string, fields map[string]string, arrays map[string][]string) error {
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte(src), &doc); err != nil {
+		return err
+	}
+	if len(doc.Content) == 0 {
+		return nil
+	}
+	root := derefYAMLNode(doc.Content[0])
+	if root != nil && root.Kind == yaml.DocumentNode && len(root.Content) > 0 {
+		root = derefYAMLNode(root.Content[0])
+	}
+	if root == nil || root.Kind != yaml.MappingNode {
+		return errors.New("YAML front matter 顶层必须是 map")
+	}
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		keyNode := derefYAMLNode(root.Content[i])
+		valueNode := derefYAMLNode(root.Content[i+1])
+		if keyNode == nil || keyNode.Kind != yaml.ScalarNode || valueNode == nil {
+			continue
+		}
+		key := keyNode.Value
+		switch valueNode.Kind {
+		case yaml.ScalarNode:
+			fields[key] = valueNode.Value
+		case yaml.SequenceNode:
+			items := make([]string, 0, len(valueNode.Content))
+			for _, itemNode := range valueNode.Content {
+				itemNode = derefYAMLNode(itemNode)
+				if itemNode != nil && itemNode.Kind == yaml.ScalarNode {
+					items = append(items, itemNode.Value)
+				}
+			}
+			arrays[key] = items
+		}
+	}
+	return nil
+}
+
 // ParsePost 解析一个内容文件：返回 front matter 格式、标量字段、数组字段、正文、原始全文。
 // 没有 front matter 时 format 为空、body 即全文。
 func ParsePost(p string) (fmFmt string, fields map[string]string, arrays map[string][]string, body, raw string, err error) {
@@ -92,6 +141,13 @@ func ParsePost(p string) (fmFmt string, fields map[string]string, arrays map[str
 	}
 	if end == -1 { // 只有开分隔符、没有闭分隔符 → 当作无 front matter
 		fmFmt, body = "", raw
+		return
+	}
+	if fmFmt == "yaml" {
+		if err = parseYAMLFields(strings.Join(lines[1:end], "\n"), fields, arrays); err != nil {
+			return
+		}
+		body = strings.Join(lines[end+1:], "\n")
 		return
 	}
 	re := reYamlKV

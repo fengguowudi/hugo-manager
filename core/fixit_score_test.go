@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-const fixitCoreTotal = 58
+const fixitCoreTotal = 60
 
 type scoreKeeper struct {
 	t     *testing.T
@@ -288,6 +288,31 @@ func TestFixItScore(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.ck("save.quotedCommaArray", strings.Join(commaYA2["tags"], "|") == "C, C++|FixIt" && strings.Contains(commaSaved, `"C, C++"`))
+
+	// YAML literal/folded block scalar 应按语义读取，保存后不能丢缩进正文
+	blockScalarPath := filepath.Join(commentDir, "yaml-block-scalar.md")
+	blockScalarRaw := "---\ntitle: Block Scalar\ndescription: |-\n  first line\n  second # literal\nsummary: >-\n  folded\n  text\ntags: [\"docs\"]\nrepost:\n  enable: false\n  url: \"\"\n---\n\nbody\n"
+	if err := os.WriteFile(blockScalarPath, []byte(blockScalarRaw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, blockFields, blockArrays, _, _, err := ParsePost(blockScalarPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.ck("yaml.parseBlockScalar", blockFields["description"] == "first line\nsecond # literal" &&
+		blockFields["summary"] == "folded text" && strings.Join(blockArrays["tags"], ",") == "docs")
+
+	if err := SavePost(blockScalarPath, map[string]string{"description": blockFields["description"], "summary": blockFields["summary"]}, nil, "updated body\n"); err != nil {
+		t.Fatal(err)
+	}
+	blockSaved := readFile(t, blockScalarPath)
+	_, blockFields2, _, blockBody2, _, err := ParsePost(blockScalarPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.ck("yaml.saveBlockScalar", blockFields2["description"] == "first line\nsecond # literal" &&
+		blockFields2["summary"] == "folded text" && strings.Contains(blockBody2, "updated body") &&
+		strings.Contains(blockSaved, "repost:\n  enable: false\n  url: \"\"") && !strings.Contains(blockSaved, "\n  first line\n"))
 
 	// p5: YAML 块式列表（FixIt 原型默认写法）应解析为数组
 	_, _, ha, _, _, err := ParsePost(filepath.Join(site, helloRel))
