@@ -1,10 +1,11 @@
 package main
 
 // FixIt 主题 UI 层适配基准：编辑器按 ThemeSchema 渲染主题专有字段，
-// 并能无损往返（填入 → 收集）。输出 METRIC fixit_ui=N（共 12 分）。
+// 并能无损往返（填入 → 收集）。输出 METRIC fixit_ui=N（共 13 分）。
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -143,6 +144,22 @@ func TestFixItUI(t *testing.T) {
 
 	// u10: 概览友链卡片列出昵称与链接
 	ck("ui.friendsCard", strings.Contains(texts.String(), "示例友链") && strings.Contains(texts.String(), "https://fixit.lruihao.cn"))
+
+	// u11: 多语言新建后，UI 打开路径必须指向默认语言 contentDir
+	yamlSite := t.TempDir()
+	yamlConfig := "title: YAML UI\ndefaultContentLanguage: zh-cn\nlanguages:\n  zh-cn:\n    contentDir: content/zh-cn\n  en:\n    contentDir: content/en\n"
+	if err := os.WriteFile(filepath.Join(yamlSite, "hugo.yaml"), []byte(yamlConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := core.CreateFallbackPost(yamlSite, "posts/ui-new.md", "UI New"); err != nil {
+		t.Fatal(err)
+	}
+	yamlApp := core.NewApp(filepath.Join(t.TempDir(), "config.json"))
+	yamlApp.SetConfig(core.Config{SiteDir: yamlSite})
+	yamlUI := &nativeUI{a: yamlApp}
+	openRel := yamlUI.newPostOpenPath("posts/ui-new.md")
+	_, openErr := os.Stat(filepath.Join(yamlSite, filepath.FromSlash(openRel)))
+	ck("ui.newPostDefaultDir", openRel == "content/zh-cn/posts/ui-new.md" && openErr == nil)
 	fmt.Printf("METRIC fixit_ui=%d\n", score)
 }
 

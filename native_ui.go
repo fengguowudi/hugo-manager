@@ -392,6 +392,10 @@ func splitNative(s string) []string {
 	return out
 }
 
+func (ui *nativeUI) newPostOpenPath(rel string) string {
+	return core.ContentRelPath(ui.a.ConfigSnapshot().SiteDir, rel)
+}
+
 func (ui *nativeUI) newPost() {
 	if strings.TrimSpace(ui.title.Text) == "" {
 		return
@@ -403,7 +407,7 @@ func (ui *nativeUI) newPost() {
 		return
 	}
 	ui.refresh()
-	ui.openPost("content/" + filepath.ToSlash(rel))
+	ui.openPost(ui.newPostOpenPath(rel))
 }
 
 func (ui *nativeUI) deletePost() {

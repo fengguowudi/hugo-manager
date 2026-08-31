@@ -232,6 +232,12 @@ func DefaultContentDir(siteDir string) string {
 	return "content"
 }
 
+// ContentRelPath 返回站点根目录相对路径：<默认语言 contentDir>/<rel>。
+// 新建、fallback 写入与 UI 打开必须共用它，避免多语言路径漂移。
+func ContentRelPath(siteDir, rel string) string {
+	return filepath.ToSlash(filepath.Join(DefaultContentDir(siteDir), filepath.FromSlash(rel)))
+}
+
 // ContentRoots 返回所有需扫描的内容目录：默认语言目录 + 各语言自定义 contentDir（去重）。
 func ContentRoots(siteDir string) []string {
 	defaultDir, explicit := languageContentDirs(siteDir)
