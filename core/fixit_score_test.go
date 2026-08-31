@@ -11,9 +11,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
-const fixitCoreTotal = 66
+const fixitCoreTotal = 67
 
 type scoreKeeper struct {
 	t     *testing.T
@@ -224,6 +225,23 @@ func TestFixItScore(t *testing.T) {
 		localStatus[post.Title] = post
 	}
 	s.ck("list.localDateTimeStatus", localDateErr == nil && localStatus["Local Future"].Scheduled && localStatus["Local Expired"].Expired)
+
+	// 站点 timeZone 必须参与无偏移时间解释；该裸时间按 UTC 是未来，按 +08:00 已过去 6 小时
+	timeZoneSite := t.TempDir()
+	timeZoneDir := filepath.Join(timeZoneSite, "content", "posts")
+	if err := os.MkdirAll(timeZoneDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(timeZoneSite, "hugo.toml"), []byte("timeZone = \"Asia/Shanghai\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	boundaryClock := time.Now().UTC().Add(2 * time.Hour).Format("2006-01-02T15:04:05")
+	timeZonePost := "---\ntitle: Time Zone Boundary\ndate: 2024-01-01T00:00:00\npublishDate: " + boundaryClock + "\nexpiryDate: " + boundaryClock + "\n---\n\nbody\n"
+	if err := os.WriteFile(filepath.Join(timeZoneDir, "boundary.md"), []byte(timeZonePost), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	timeZonePosts, timeZoneErr := ListPosts(timeZoneSite)
+	s.ck("list.siteTimeZone", timeZoneErr == nil && len(timeZonePosts) == 1 && timeZonePosts[0].Expired && !timeZonePosts[0].Scheduled)
 
 	// SafeSitePath 必须拒绝站点内指向站点外文件的符号链接，防止 SavePost 越界写入
 	pathBase := t.TempDir()

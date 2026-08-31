@@ -32,36 +32,67 @@ type Post struct {
 	Kind      string `json:"kind"`      // page=普通文章 section=列表页(_index.md) bundle=页面包(index.md)
 }
 
-// parseFMDate 解析 Hugo front matter 日期：带偏移 RFC3339，或按 Hugo 默认 UTC 解释的 local datetime/date。
-func parseFMDate(v string) (time.Time, bool) {
+type siteTimeConfig struct {
+	TimeZone string `toml:"timeZone" yaml:"timeZone"`
+}
+
+func siteTimeLocation(siteDir string) *time.Location {
+	name, src := readSiteConfigFile(siteDir)
+	var cfg siteTimeConfig
+	switch {
+	case strings.HasSuffix(name, ".toml"):
+		_, _ = toml.Decode(src, &cfg)
+	case strings.HasSuffix(name, ".yaml"), strings.HasSuffix(name, ".yml"):
+		_ = yaml.Unmarshal([]byte(src), &cfg)
+	}
+	zone := strings.TrimSpace(cfg.TimeZone)
+	if zone == "" {
+		return time.UTC // Hugo 默认时区
+	}
+	loc, err := time.LoadLocation(zone)
+	if err != nil {
+		return time.UTC
+	}
+	return loc
+}
+
+// parseFMDateIn 解析 Hugo front matter 日期；带偏移值自描述，local datetime/date 使用站点时区。
+func parseFMDateIn(v string, loc *time.Location) (time.Time, bool) {
 	v = strings.TrimSpace(v)
 	if v == "" {
 		return time.Time{}, false
 	}
+	if t, err := time.Parse(time.RFC3339Nano, v); err == nil {
+		return t, true
+	}
+	if loc == nil {
+		loc = time.UTC
+	}
 	for _, layout := range []string{
-		time.RFC3339Nano,
 		"2006-01-02T15:04:05",
 		"2006-01-02 15:04:05",
 		"2006-01-02T15:04",
 		"2006-01-02 15:04",
 		"2006-01-02",
 	} {
-		if t, err := time.Parse(layout, v); err == nil {
+		if t, err := time.ParseInLocation(layout, v, loc); err == nil {
 			return t, true
 		}
 	}
 	return time.Time{}, false // 解析不了不算数，不误报
 }
 
+func parseFMDate(v string) (time.Time, bool) { return parseFMDateIn(v, time.UTC) }
+
 // expired 判断 expiryDate 是否已过（Hugo 构建时静默跳过）。
-func expired(v string) bool {
-	t, ok := parseFMDate(v)
+func expired(v string, loc *time.Location) bool {
+	t, ok := parseFMDateIn(v, loc)
 	return ok && t.Before(time.Now())
 }
 
 // scheduled 判断 publishDate 是否在未来（到时间前 Hugo 不发布）。
-func scheduled(v string) bool {
-	t, ok := parseFMDate(v)
+func scheduled(v string, loc *time.Location) bool {
+	t, ok := parseFMDateIn(v, loc)
 	return ok && t.After(time.Now())
 }
 
@@ -647,17 +678,18 @@ func delLine(lines []string, key string, toml bool) []string {
 // ListPosts 扫描各语言内容目录（ContentRoots）下全部 Markdown 文件（跳过隐藏目录）。
 func ListPosts(siteDir string) ([]Post, error) {
 	roots := ContentRoots(siteDir)
+	loc := siteTimeLocation(siteDir)
 	var posts []Post
 	for _, rootRel := range roots {
-		posts = append(posts, listPostsIn(siteDir, rootRel, roots)...)
+		posts = append(posts, listPostsIn(siteDir, rootRel, roots, loc)...)
 	}
-	sortPosts(posts)
+	sortPosts(posts, loc)
 	return posts, nil
 }
 
 // listPostsIn 扫描单个内容根；Section 取相对于该内容根的第一级目录。
 // 扫描父根时跳过另一个已声明的嵌套根，避免同一文章重复读取。
-func listPostsIn(siteDir, rootRel string, allRoots []string) []Post {
+func listPostsIn(siteDir, rootRel string, allRoots []string, loc *time.Location) []Post {
 	root := filepath.Join(siteDir, filepath.FromSlash(rootRel))
 	var posts []Post
 	if _, err := os.Stat(root); err != nil {
@@ -702,8 +734,8 @@ func listPostsIn(siteDir, rootRel string, allRoots []string) []Post {
 		post := Post{
 			Path: rel, Title: title,
 			Draft: fields["draft"] == "true", Encrypted: fields["password"] != "",
-			Expired:   expired(fields["expiryDate"]),
-			Scheduled: scheduled(fields["publishDate"]),
+			Expired:   expired(fields["expiryDate"], loc),
+			Scheduled: scheduled(fields["publishDate"], loc),
 			Date:      fields["date"],
 		}
 		if sub := strings.TrimPrefix(rel, rootRel+"/"); sub != rel {
@@ -724,11 +756,11 @@ func listPostsIn(siteDir, rootRel string, allRoots []string) []Post {
 	return posts
 }
 
-func sortPosts(posts []Post) {
+func sortPosts(posts []Post, loc *time.Location) {
 	sort.SliceStable(posts, func(i, j int) bool {
 		di, dj := posts[i].Date, posts[j].Date
-		ti, okI := parseFMDate(di)
-		tj, okJ := parseFMDate(dj)
+		ti, okI := parseFMDateIn(di, loc)
+		tj, okJ := parseFMDateIn(dj, loc)
 		if okI && okJ {
 			return ti.After(tj) // 比较实际瞬间，正确处理不同时区偏移
 		}
