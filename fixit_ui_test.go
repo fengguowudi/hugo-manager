@@ -1,7 +1,7 @@
 package main
 
 // FixIt 主题 UI 层适配基准：编辑器按 ThemeSchema 渲染主题专有字段，
-// 并能无损往返（填入 → 收集）。输出 METRIC fixit_ui=N（共 10 分）。
+// 并能无损往返（填入 → 收集）。输出 METRIC fixit_ui=N（共 11 分）。
 
 import (
 	"fmt"
@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 
 	"hugo-manager/core"
@@ -125,6 +126,9 @@ func TestFixItUI(t *testing.T) {
 
 	// u9: 概览显示友链数量（fixture data/friends.yml 有 2 条）
 	ck("ui.friendsCount", strings.Contains(texts.String(), "友链 2 个"))
+
+	// u10: 概览友链卡片列出昵称与链接
+	ck("ui.friendsCard", strings.Contains(texts.String(), "示例友链") && strings.Contains(texts.String(), "https://fixit.lruihao.cn"))
 	fmt.Printf("METRIC fixit_ui=%d\n", score)
 }
 
@@ -134,6 +138,8 @@ func collectTexts(o fyne.CanvasObject, sb *strings.Builder) {
 	case *widget.Label:
 		sb.WriteString(o.Text)
 		sb.WriteByte('\n')
+	case *container.Scroll:
+		collectTexts(o.Content, sb)
 	case *fyne.Container:
 		for _, c := range o.Objects {
 			collectTexts(c, sb)

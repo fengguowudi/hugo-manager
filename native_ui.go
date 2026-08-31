@@ -194,7 +194,17 @@ func (ui *nativeUI) overview() fyne.CanvasObject {
 	newPost.Importance = widget.HighImportance
 	preview := widget.NewButtonWithIcon("启动预览", theme.MediaPlayIcon(), func() { ui.startServer() })
 	build := widget.NewButtonWithIcon("构建站点", theme.ViewRefreshIcon(), func() { ui.buildSite() })
-	return container.NewBorder(iosHeader("站点概览", newPost, preview, build), nil, nil, nil, container.NewPadded(info))
+	body := []fyne.CanvasObject{container.NewPadded(info)}
+	if friends, err := core.ListFriends(cfg.SiteDir); err == nil && len(friends) > 0 {
+		rows := make([]fyne.CanvasObject, 0, len(friends))
+		for _, f := range friends {
+			l := widget.NewLabel(fmt.Sprintf("%s  %s\n%s", f.Nickname, f.URL, f.Description))
+			l.Wrapping = fyne.TextWrapWord
+			rows = append(rows, l)
+		}
+		body = append(body, iosCard("友情链接", rows...))
+	}
+	return container.NewBorder(iosHeader("站点概览", newPost, preview, build), nil, nil, nil, container.NewVScroll(container.NewVBox(body...)))
 }
 
 func (ui *nativeUI) content() fyne.CanvasObject {
