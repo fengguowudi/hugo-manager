@@ -1,7 +1,7 @@
 package main
 
 // FixIt 主题 UI 层适配基准：编辑器按 ThemeSchema 渲染主题专有字段，
-// 并能无损往返（填入 → 收集）。输出 METRIC fixit_ui=N（共 14 分）。
+// 并能无损往返（填入 → 收集）。输出 METRIC fixit_ui=N（共 15 分）。
 
 import (
 	"fmt"
@@ -170,6 +170,29 @@ func TestFixItUI(t *testing.T) {
 	wasDirty := editUI.dirty
 	editUI.openPost(editRel)
 	ck("ui.samePostKeepsDirty", wasDirty && editUI.dirty && editUI.postBody.Text == "UNSAVED MARKER")
+
+	// u13: 首次保存触发 refresh 后，第二次修改 FixIt 专有字段仍必须写入磁盘
+	repeatSite := filepath.Join(t.TempDir(), "site")
+	if err := os.CopyFS(repeatSite, os.DirFS(site)); err != nil {
+		t.Fatal(err)
+	}
+	repeatApp := core.NewApp(filepath.Join(t.TempDir(), "config.json"))
+	repeatApp.SetConfig(core.Config{SiteDir: repeatSite})
+	repeatUI := &nativeUI{a: repeatApp}
+	repeatUI.makeEditor()
+	repeatRel := filepath.ToSlash(filepath.Join("content", "posts", "hello-fixit.md"))
+	repeatUI.openPost(repeatRel)
+	subtitle, subtitleOK := repeatUI.extraWidgets["subtitle"].(*widget.Entry)
+	if !subtitleOK {
+		ck("ui.extraFieldSecondSave", false)
+	} else {
+		subtitle.SetText("FIRST SAVE")
+		repeatUI.savePost()
+		subtitle.SetText("SECOND SAVE")
+		repeatUI.savePost()
+		_, repeatFields, _, _, _, parseErr := core.ParsePost(filepath.Join(repeatSite, filepath.FromSlash(repeatRel)))
+		ck("ui.extraFieldSecondSave", parseErr == nil && repeatFields["subtitle"] == "SECOND SAVE")
+	}
 	fmt.Printf("METRIC fixit_ui=%d\n", score)
 }
 

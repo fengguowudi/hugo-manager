@@ -373,7 +373,7 @@ func (ui *nativeUI) savePost() {
 	fields := map[string]string{"title": ui.postTitle.Text, "date": ui.postDate.Text, "slug": ui.postSlug.Text, "description": ui.postDescription.Text, "draft": strconv.FormatBool(ui.postDraft.Checked)}
 	arrays := map[string][]string{"tags": splitNative(ui.postTags.Text), "categories": splitNative(ui.postCategories.Text)}
 	if len(ui.extraWidgets) > 0 { // 合并主题专有字段
-		schema := core.ThemeSchema(ui.theme)
+		schema := core.ThemeSchema(core.DetectTheme(ui.a.ConfigSnapshot().SiteDir))
 		ef, ea := collectExtra(schema, ui.extraWidgets)
 		mergeExtras(fields, arrays, ef, ea, schema, ui.presentKeys)
 	}
