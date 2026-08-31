@@ -29,11 +29,13 @@ type nativeUI struct {
 	nav                                []*widget.Button
 	status                             *widget.Label
 	posts                              []Post
+	visible                            []Post
 	list                               *widget.List
 	editor                             *fyne.Container
 	current                            string
 	dirty                              bool
 	hint                               *widget.Label
+	search                             *widget.Entry
 	title, section, bin, siteDir, port *widget.Entry
 	includeDrafts                      *widget.Check
 	postTitle, postDate, postSlug      *widget.Entry
@@ -115,6 +117,15 @@ func iosHeader(title string, actions ...fyne.CanvasObject) fyne.CanvasObject {
 	return container.NewBorder(nil, widget.NewSeparator(), nil, right, container.NewPadded(label))
 }
 
+// iosCard renders a rounded white grouped card with a bold section title, iOS settings style.
+func iosCard(title string, objects ...fyne.CanvasObject) fyne.CanvasObject {
+	bg := canvas.NewRectangle(iosBg)
+	bg.CornerRadius = 10
+	head := widget.NewLabelWithStyle(title, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	rows := append([]fyne.CanvasObject{head, widget.NewSeparator()}, objects...)
+	return container.NewStack(bg, container.NewPadded(container.NewVBox(rows...)))
+}
+
 func (ui *nativeUI) refresh() {
 	cfg := ui.a.cfgSnapshot()
 	if cfg.SiteDir == "" {
@@ -125,9 +136,7 @@ func (ui *nativeUI) refresh() {
 	} else {
 		posts, _ := listPosts(cfg.SiteDir)
 		ui.posts = posts
-		if ui.list != nil {
-			ui.list.Refresh()
-		}
+		ui.applyFilter()
 		if ui.siteLabel != nil {
 			name, _ := siteInfo(cfg.SiteDir)
 			ui.siteLabel.SetText(fallback(name, filepath.Base(cfg.SiteDir)))
@@ -183,10 +192,13 @@ func (ui *nativeUI) content() fyne.CanvasObject {
 	newButton.Importance = widget.HighImportance
 	newBar := container.NewBorder(nil, nil, nil, newButton, container.NewGridWithColumns(2, ui.title, ui.section))
 
-	ui.list = widget.NewList(func() int { return len(ui.posts) }, func() fyne.CanvasObject {
+	ui.search = widget.NewEntry()
+	ui.search.SetPlaceHolder("搜索标题或路径…")
+	ui.search.OnChanged = func(string) { ui.applyFilter() }
+	ui.list = widget.NewList(func() int { return len(ui.visible) }, func() fyne.CanvasObject {
 		return widget.NewLabel("文章")
 	}, func(id widget.ListItemID, obj fyne.CanvasObject) {
-		p := ui.posts[id]
+		p := ui.visible[id]
 		label := obj.(*widget.Label)
 		state := "已发布"
 		if p.Draft {
@@ -195,12 +207,37 @@ func (ui *nativeUI) content() fyne.CanvasObject {
 		label.SetText(fmt.Sprintf("%s  [%s]\n%s", fallback(p.Title, "(无标题)"), state, p.Path))
 		label.Wrapping = fyne.TextWrapWord
 	})
-	ui.list.OnSelected = func(id widget.ListItemID) { ui.openPost(ui.posts[id].Path) }
+	ui.list.OnSelected = func(id widget.ListItemID) {
+		if id < len(ui.visible) {
+			ui.openPost(ui.visible[id].Path)
+		}
+	}
 	ui.editor = ui.makeEditor()
-	listCol := container.NewBorder(iosHeader("内容列表"), container.NewPadded(newBar), nil, nil, ui.list)
+	top := container.NewVBox(iosHeader("内容列表"), container.NewPadded(ui.search))
+	listCol := container.NewBorder(top, container.NewPadded(newBar), nil, nil, ui.list)
 	split := container.NewHSplit(listCol, ui.editor)
 	split.Offset = .32
 	return split
+}
+
+// applyFilter filters posts by the search box text and refreshes the list.
+func (ui *nativeUI) applyFilter() {
+	q := ""
+	if ui.search != nil {
+		q = strings.ToLower(strings.TrimSpace(ui.search.Text))
+	}
+	ui.visible = ui.posts
+	if q != "" {
+		ui.visible = nil
+		for _, p := range ui.posts {
+			if strings.Contains(strings.ToLower(p.Title), q) || strings.Contains(strings.ToLower(p.Path), q) {
+				ui.visible = append(ui.visible, p)
+			}
+		}
+	}
+	if ui.list != nil {
+		ui.list.Refresh()
+	}
 }
 
 func fallback(v, d string) string {
@@ -389,13 +426,17 @@ func (ui *nativeUI) settings() fyne.CanvasObject {
 	save := widget.NewButton("保存设置", func() { ui.saveSettings() })
 	save.Importance = widget.HighImportance
 	detect := widget.NewButtonWithIcon("检测 Hugo", theme.SearchIcon(), func() { ui.detectHugo() })
-	form := widget.NewForm(
-		widget.NewFormItem("Hugo 路径", binRow),
-		widget.NewFormItem("站点目录", dirRow),
-		widget.NewFormItem("预览端口", ui.port),
-		widget.NewFormItem("构建选项", ui.includeDrafts),
+	pageBg := canvas.NewRectangle(iosGroupBg)
+	cards := container.NewVBox(
+		iosCard("站点", widget.NewForm(widget.NewFormItem("站点目录", dirRow))),
+		iosCard("Hugo", widget.NewForm(widget.NewFormItem("Hugo 路径", binRow))),
+		iosCard("构建与预览", widget.NewForm(
+			widget.NewFormItem("预览端口", ui.port),
+			widget.NewFormItem("构建选项", ui.includeDrafts),
+		)),
 	)
-	return container.NewBorder(iosHeader("设置", detect, save), nil, nil, nil, container.NewPadded(form))
+	body := container.NewVScroll(container.NewPadded(cards))
+	return container.NewBorder(iosHeader("设置", detect, save), nil, nil, nil, container.NewStack(pageBg, body))
 }
 
 func (ui *nativeUI) saveSettings() {
@@ -492,7 +533,10 @@ func (ui *nativeUI) buildSite() {
 	}()
 }
 func (ui *nativeUI) loadLogs() {
-	ui.logs.SetText(strings.Join(ui.a.hub.historySnapshot(), "\n"))
+	text := strings.Join(ui.a.hub.historySnapshot(), "\n")
+	ui.logs.SetText(text)
+	ui.logs.CursorRow, ui.logs.CursorColumn = strings.Count(text, "\n"), 0 // 光标置末行，滚动到底
+	ui.logs.Refresh()
 }
 func (ui *nativeUI) showError(err error) { dialog.ShowError(err, ui.win) }
 
