@@ -17,12 +17,13 @@ import (
 
 // Post 列表页需要的文章摘要信息。
 type Post struct {
-	Path    string `json:"path"` // 相对站点根目录，如 content/posts/hello.md
-	Title   string `json:"title"`
-	Section string `json:"section"` // content/ 下第一级目录名
-	Draft   bool   `json:"draft"`
-	Date    string `json:"date"` // front matter 原始字符串（ISO 排序友好）
-	Kind    string `json:"kind"` // page=普通文章 section=列表页(_index.md) bundle=页面包(index.md)
+	Path      string `json:"path"` // 相对站点根目录，如 content/posts/hello.md
+	Title     string `json:"title"`
+	Section   string `json:"section"` // content/ 下第一级目录名
+	Draft     bool   `json:"draft"`
+	Encrypted bool   `json:"encrypted"` // 含 password（FixIt 内容加密，构建后需 @hugo-fixit/encrypt）
+	Date      string `json:"date"`      // front matter 原始字符串（ISO 排序友好）
+	Kind      string `json:"kind"`      // page=普通文章 section=列表页(_index.md) bundle=页面包(index.md)
 }
 
 var (
@@ -286,8 +287,8 @@ func ListPosts(siteDir string) ([]Post, error) {
 		}
 		post := Post{
 			Path: rel, Title: title,
-			Draft: fields["draft"] == "true",
-			Date:  fields["date"],
+			Draft: fields["draft"] == "true", Encrypted: fields["password"] != "",
+			Date: fields["date"],
 		}
 		parts := strings.Split(rel, "/")
 		if len(parts) > 2 {

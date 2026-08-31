@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-const fixitCoreTotal = 29
+const fixitCoreTotal = 30
 
 type scoreKeeper struct {
 	t     *testing.T
@@ -108,6 +108,7 @@ func TestFixItScore(t *testing.T) {
 	a := NewApp(filepath.Join(t.TempDir(), "config.json"))
 	a.SetConfig(Config{SiteDir: site})
 	s.ck("state.theme", a.BuildState()["theme"] == "FixIt")
+	s.ck("state.encryptedCount", a.BuildState()["countEncrypted"] == 1) // locked-weighted.md 有 password
 
 	// ---- 解析 ----
 	helloRel := filepath.Join("content", "posts", "hello-fixit.md")

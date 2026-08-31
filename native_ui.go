@@ -170,8 +170,12 @@ func (ui *nativeUI) overview() fyne.CanvasObject {
 	info.Wrapping = fyne.TextWrapWord
 	update := func() {
 		st := ui.a.BuildState()
-		info.SetText(fmt.Sprintf("站点标题：%v\n主题：%v\nbaseURL：%v\n站点目录：%v\nHugo：%v\n内容：%v 篇（草稿 %v 篇）",
-			st["siteTitle"], st["theme"], st["baseURL"], st["siteDir"], st["hugoVersion"], st["countTotal"], st["countDrafts"]))
+		text := fmt.Sprintf("站点标题：%v\n主题：%v\nbaseURL：%v\n站点目录：%v\nHugo：%v\n内容：%v 篇（草稿 %v 篇）",
+			st["siteTitle"], st["theme"], st["baseURL"], st["siteDir"], st["hugoVersion"], st["countTotal"], st["countDrafts"])
+		if n, _ := st["countEncrypted"].(int); n > 0 {
+			text += fmt.Sprintf("\n🔒 加密文章 %d 篇：含 password 的内容构建后需执行 npx @hugo-fixit/encrypt 才会真正加密", n)
+		}
+		info.SetText(text)
 	}
 	update()
 	newPost := widget.NewButtonWithIcon("新建文章", theme.ContentAddIcon(), func() { ui.showPage(1) })
