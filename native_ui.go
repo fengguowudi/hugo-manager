@@ -184,6 +184,9 @@ func (ui *nativeUI) overview() fyne.CanvasObject {
 		if w, _ := st["hugoCompat"].(string); w != "" {
 			text += "\n⚠️ " + w
 		}
+		if n, _ := st["countFriends"].(int); n > 0 {
+			text += fmt.Sprintf("\n🔗 友链 %d 个（data/friends.yml）", n)
+		}
 		info.SetText(text)
 	}
 	update()

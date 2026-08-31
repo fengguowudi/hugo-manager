@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-const fixitCoreTotal = 39
+const fixitCoreTotal = 42
 
 type scoreKeeper struct {
 	t     *testing.T
@@ -124,6 +124,19 @@ func TestFixItScore(t *testing.T) {
 	a.Probe() // 真 hugo v0.165.0
 	_, hasWarn := a.BuildState()["hugoCompat"]
 	s.ck("state.hugoCompatNew", !hasWarn)
+
+	// ---- FixIt 友链（data/friends.yml，供 layout: friends 页面使用）----
+	friends, ferr := ListFriends(site)
+	s.ck("friends.parse", ferr == nil && len(friends) == 2 && friends[0].Nickname == "示例友链" && friends[1].URL == "https://fixit.lruihao.cn")
+
+	fs := copySite(t, site)
+	baddies := AddFriend(fs, Friend{Nickname: "无链接"}) == nil ||
+		AddFriend(fs, Friend{Nickname: "坏协议", URL: "ftp://x"}) == nil
+	okAdd := AddFriend(fs, Friend{Nickname: "新友链", URL: "https://new.example.com", Description: "d"}) == nil
+	friends2, _ := ListFriends(fs)
+	s.ck("friends.addValidate", !baddies && okAdd && len(friends2) == 3 && friends2[2].Nickname == "新友链")
+
+	s.ck("state.friendsCount", a.BuildState()["countFriends"] == 2)
 
 	// ---- 解析 ----
 	helloRel := filepath.Join("content", "posts", "hello-fixit.md")

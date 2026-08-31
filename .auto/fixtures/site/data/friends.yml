@@ -1,0 +1,8 @@
+- nickname: 示例友链
+  avatar: https://example.com/avatar1.png
+  url: https://example.com
+  description: 示例描述
+- nickname: FixIt
+  avatar: https://fixit.lruihao.cn/images/avatar.png
+  url: https://fixit.lruihao.cn
+  description: A Clean, Elegant but Advanced Hugo Theme

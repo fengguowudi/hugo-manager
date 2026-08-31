@@ -1,7 +1,7 @@
 package main
 
 // FixIt 主题 UI 层适配基准：编辑器按 ThemeSchema 渲染主题专有字段，
-// 并能无损往返（填入 → 收集）。输出 METRIC fixit_ui=N（共 9 分）。
+// 并能无损往返（填入 → 收集）。输出 METRIC fixit_ui=N（共 10 分）。
 
 import (
 	"fmt"
@@ -122,6 +122,9 @@ func TestFixItUI(t *testing.T) {
 	var texts2 strings.Builder
 	collectTexts(ui2.overview(), &texts2)
 	ck("ui.compatHint", strings.Contains(texts2.String(), "0.161.0"))
+
+	// u9: 概览显示友链数量（fixture data/friends.yml 有 2 条）
+	ck("ui.friendsCount", strings.Contains(texts.String(), "友链 2 个"))
 	fmt.Printf("METRIC fixit_ui=%d\n", score)
 }
 
