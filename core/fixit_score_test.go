@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-const fixitCoreTotal = 42
+const fixitCoreTotal = 44
 
 type scoreKeeper struct {
 	t     *testing.T
@@ -251,6 +251,18 @@ func TestFixItScore(t *testing.T) {
 	}
 	fb := readFile(t, filepath.Join(tmpSite, "content", "posts", "fallback-check.md"))
 	s.ck("fallback.fixitFields", strings.Contains(fb, "subtitle:") && strings.Contains(fb, "featured_image:"))
+
+	// ---- 路径安全（新建文章的 section 输入是信任边界）----
+	s.ck("safe.sanitizeSection", SanitizeSection("../etc") == "posts" && SanitizeSection("ok-name_1") == "ok-name_1")
+
+	base := t.TempDir()
+	safeSite := filepath.Join(base, "site")
+	if err := os.MkdirAll(safeSite, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	err = CreateFallbackPost(safeSite, "../evil.md", "x")
+	_, statErr := os.Stat(filepath.Join(base, "evil.md"))
+	s.ck("safe.fallbackNoEscape", err != nil && os.IsNotExist(statErr))
 
 	// ---- TOML front matter（FixIt 同样支持）----
 	tomlRel := filepath.Join("content", "posts", "toml-post.md")

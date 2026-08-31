@@ -386,10 +386,7 @@ func (ui *nativeUI) newPost() {
 	if strings.TrimSpace(ui.title.Text) == "" {
 		return
 	}
-	section := strings.TrimSpace(ui.section.Text)
-	if section == "" {
-		section = "posts"
-	}
+	section := core.SanitizeSection(ui.section.Text)
 	rel := filepath.Join(section, time.Now().Format("20060102-150405")+".md")
 	if err := ui.a.NewContent(filepath.ToSlash(rel), "", ui.title.Text); err != nil {
 		ui.showError(err)

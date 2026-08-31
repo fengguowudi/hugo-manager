@@ -149,6 +149,9 @@ func (a *App) NewContent(rel, kind, title string) error {
 	if cfg.SiteDir == "" {
 		return errors.New("请先在「设置」中填写站点目录")
 	}
+	if rel == "" || strings.Contains(rel, "..") { // 防目录穿越（hugo new 路径同样要守）
+		return errors.New("非法路径")
+	}
 	bin, err := a.resolveHugo(cfg)
 	if err == nil {
 		args := []string{"new"}
@@ -170,6 +173,9 @@ func (a *App) NewContent(rel, kind, title string) error {
 // CreateFallbackPost 无 hugo 二进制时的兜底：content/<rel> 写最简模板。
 // 识别到主题（如 FixIt）时套用该主题的字段布局。
 func CreateFallbackPost(siteDir, rel, title string) error {
+	if rel == "" || strings.Contains(rel, "..") { // 与 SafeSitePath 同一规则，防目录穿越
+		return errors.New("非法路径")
+	}
 	if title == "" {
 		title = strings.TrimSuffix(rel, ".md")
 		title = strings.NewReplacer("-", " ", "_", " ").Replace(title)
