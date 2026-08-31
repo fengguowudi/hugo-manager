@@ -1,7 +1,7 @@
 package main
 
 // FixIt 主题 UI 层适配基准：编辑器按 ThemeSchema 渲染主题专有字段，
-// 并能无损往返（填入 → 收集）。输出 METRIC fixit_ui=N（共 13 分）。
+// 并能无损往返（填入 → 收集）。输出 METRIC fixit_ui=N（共 14 分）。
 
 import (
 	"fmt"
@@ -160,6 +160,16 @@ func TestFixItUI(t *testing.T) {
 	openRel := yamlUI.newPostOpenPath("posts/ui-new.md")
 	_, openErr := os.Stat(filepath.Join(yamlSite, filepath.FromSlash(openRel)))
 	ck("ui.newPostDefaultDir", openRel == "content/zh-cn/posts/ui-new.md" && openErr == nil)
+
+	// u12: 再次选择当前文章不能无提示重载并丢失未保存正文
+	editUI := &nativeUI{a: a}
+	editUI.makeEditor()
+	editRel := filepath.ToSlash(filepath.Join("content", "posts", "hello-fixit.md"))
+	editUI.openPost(editRel)
+	editUI.postBody.SetText("UNSAVED MARKER")
+	wasDirty := editUI.dirty
+	editUI.openPost(editRel)
+	ck("ui.samePostKeepsDirty", wasDirty && editUI.dirty && editUI.postBody.Text == "UNSAVED MARKER")
 	fmt.Printf("METRIC fixit_ui=%d\n", score)
 }
 

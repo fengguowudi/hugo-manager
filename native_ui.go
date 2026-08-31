@@ -321,6 +321,9 @@ func (ui *nativeUI) makeEditor() *fyne.Container {
 	return container.NewBorder(iosHeader("编辑器", deleteBtn, save), statusLine, nil, nil, split)
 }
 func (ui *nativeUI) openPost(path string) {
+	if ui.dirty && ui.current == path {
+		return // 重选当前文章不应从磁盘重载并静默丢失未保存内容
+	}
 	if ui.dirty && ui.current != "" && ui.current != path {
 		dialog.ShowConfirm("未保存的更改", "当前文章有未保存的修改，切换后将丢失。仍要切换吗？", func(ok bool) {
 			if ok {
