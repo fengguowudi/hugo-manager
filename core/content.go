@@ -144,19 +144,49 @@ func ParsePost(p string) (fmFmt string, fields map[string]string, arrays map[str
 	return
 }
 
-// splitList 拆分行内数组 a, b, "c d"。
+// splitList 拆分行内数组，只在引号外的逗号处分隔。
 func splitList(s string) []string {
 	if strings.TrimSpace(s) == "" {
 		return nil
 	}
-	parts := strings.Split(s, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if t := unquote(strings.TrimSpace(p)); t != "" {
-			out = append(out, t)
+	var parts []string
+	var item strings.Builder
+	var quote byte
+	escaped := false
+	flush := func() {
+		if v := unquote(strings.TrimSpace(item.String())); v != "" {
+			parts = append(parts, v)
+		}
+		item.Reset()
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if escaped {
+			item.WriteByte(c)
+			escaped = false
+			continue
+		}
+		if quote != 0 {
+			item.WriteByte(c)
+			if quote == '"' && c == '\\' {
+				escaped = true
+			} else if c == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch c {
+		case '"', '\'':
+			quote = c
+			item.WriteByte(c)
+		case ',':
+			flush()
+		default:
+			item.WriteByte(c)
 		}
 	}
-	return out
+	flush()
+	return parts
 }
 
 func unquote(v string) string {

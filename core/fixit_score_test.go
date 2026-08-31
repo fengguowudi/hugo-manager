@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-const fixitCoreTotal = 52
+const fixitCoreTotal = 54
 
 type scoreKeeper struct {
 	t     *testing.T
@@ -257,6 +257,37 @@ func TestFixItScore(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.ck("toml.inlineComments", tcf["title"] == "Secret #2" && tcf["draft"] == "true" && strings.Join(tca["tags"], ",") == "internal,tag#2")
+
+	// 引号内逗号是数组项内容，不能被当作分隔符
+	commaYAMLPath := filepath.Join(commentDir, "comma-yaml.md")
+	commaYAML := "---\ntitle: Comma YAML\ntags: [\"C, C++\", \"FixIt\"]\n---\n\nbody\n"
+	if err := os.WriteFile(commaYAMLPath, []byte(commaYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	commaTOMLPath := filepath.Join(commentDir, "comma-toml.md")
+	commaTOML := "+++\ntitle = \"Comma TOML\"\ntags = [\"C, C++\", \"FixIt\"]\n+++\n\nbody\n"
+	if err := os.WriteFile(commaTOMLPath, []byte(commaTOML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, _, commaYA, _, _, err := ParsePost(commaYAMLPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, commaTA, _, _, err := ParsePost(commaTOMLPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.ck("parse.quotedCommaArray", strings.Join(commaYA["tags"], "|") == "C, C++|FixIt" && strings.Join(commaTA["tags"], "|") == "C, C++|FixIt")
+
+	if err := SavePost(commaYAMLPath, nil, map[string][]string{"tags": commaYA["tags"]}, "updated\n"); err != nil {
+		t.Fatal(err)
+	}
+	commaSaved := readFile(t, commaYAMLPath)
+	_, _, commaYA2, _, _, err := ParsePost(commaYAMLPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.ck("save.quotedCommaArray", strings.Join(commaYA2["tags"], "|") == "C, C++|FixIt" && strings.Contains(commaSaved, `"C, C++"`))
 
 	// p5: YAML 块式列表（FixIt 原型默认写法）应解析为数组
 	_, _, ha, _, _, err := ParsePost(filepath.Join(site, helloRel))
