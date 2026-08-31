@@ -32,13 +32,20 @@ type Post struct {
 	Kind      string `json:"kind"`      // page=普通文章 section=列表页(_index.md) bundle=页面包(index.md)
 }
 
-// parseFMDate 解析 front matter 日期（RFC3339 或纯日期）；失败返回 false。
+// parseFMDate 解析 Hugo front matter 日期：带偏移 RFC3339，或按 Hugo 默认 UTC 解释的 local datetime/date。
 func parseFMDate(v string) (time.Time, bool) {
 	v = strings.TrimSpace(v)
 	if v == "" {
 		return time.Time{}, false
 	}
-	for _, layout := range []string{time.RFC3339, "2006-01-02"} {
+	for _, layout := range []string{
+		time.RFC3339Nano,
+		"2006-01-02T15:04:05",
+		"2006-01-02 15:04:05",
+		"2006-01-02T15:04",
+		"2006-01-02 15:04",
+		"2006-01-02",
+	} {
 		if t, err := time.Parse(layout, v); err == nil {
 			return t, true
 		}

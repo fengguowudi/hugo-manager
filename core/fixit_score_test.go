@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-const fixitCoreTotal = 65
+const fixitCoreTotal = 66
 
 type scoreKeeper struct {
 	t     *testing.T
@@ -203,6 +203,27 @@ func TestFixItScore(t *testing.T) {
 	writeSortPost("instant-new.md", "Instant New", "2023-12-31T20:00:00+00:00")
 	sortedPosts, sortErr := ListPosts(sortSite)
 	s.ck("list.timezoneChronology", sortErr == nil && len(sortedPosts) == 2 && sortedPosts[0].Title == "Instant New" && sortedPosts[1].Title == "Lexical New")
+
+	// Hugo 接受无时区 local datetime；定时/过期状态不能因此漏报
+	localDateSite := t.TempDir()
+	localDateDir := filepath.Join(localDateSite, "content", "posts")
+	if err := os.MkdirAll(localDateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	localFuture := "---\ntitle: Local Future\ndate: 2024-01-01T12:00:00\npublishDate: 2999-01-01T12:00:00\n---\n\nfuture\n"
+	localExpired := "---\ntitle: Local Expired\ndate: 2024-01-02 12:00:00\nexpiryDate: 2000-01-01 12:00:00\n---\n\nexpired\n"
+	if err := os.WriteFile(filepath.Join(localDateDir, "future.md"), []byte(localFuture), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(localDateDir, "expired.md"), []byte(localExpired), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	localDatePosts, localDateErr := ListPosts(localDateSite)
+	localStatus := map[string]Post{}
+	for _, post := range localDatePosts {
+		localStatus[post.Title] = post
+	}
+	s.ck("list.localDateTimeStatus", localDateErr == nil && localStatus["Local Future"].Scheduled && localStatus["Local Expired"].Expired)
 
 	// SafeSitePath 必须拒绝站点内指向站点外文件的符号链接，防止 SavePost 越界写入
 	pathBase := t.TempDir()
