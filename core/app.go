@@ -130,18 +130,13 @@ func evalWithExistingPrefix(path string) (string, error) {
 	}
 }
 
-// SafeSitePath 将站点内相对路径转为绝对路径，并阻止目录穿越及符号链接逃逸。
-func (a *App) SafeSitePath(rel string) (string, error) {
-	cfg := a.ConfigSnapshot()
-	if cfg.SiteDir == "" {
-		return "", errors.New("请先在「设置」中填写站点目录")
-	}
+func safePathInRoot(rootDir, rel string) (string, error) {
 	rel = strings.ReplaceAll(rel, "\\", "/")
 	relPath := filepath.FromSlash(rel)
 	if rel == "" || filepath.IsAbs(relPath) {
 		return "", errors.New("非法路径")
 	}
-	root, err := filepath.Abs(cfg.SiteDir)
+	root, err := filepath.Abs(rootDir)
 	if err != nil {
 		return "", err
 	}
@@ -158,6 +153,15 @@ func (a *App) SafeSitePath(rel string) (string, error) {
 		return "", errors.New("路径通过符号链接指向站点目录外")
 	}
 	return abs, nil
+}
+
+// SafeSitePath 将站点内相对路径转为绝对路径，并阻止目录穿越及符号链接逃逸。
+func (a *App) SafeSitePath(rel string) (string, error) {
+	cfg := a.ConfigSnapshot()
+	if cfg.SiteDir == "" {
+		return "", errors.New("请先在「设置」中填写站点目录")
+	}
+	return safePathInRoot(cfg.SiteDir, rel)
 }
 
 // BuildState 汇总前端所需的全部状态（含文章列表，供「内容」页使用）。

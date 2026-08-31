@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-const fixitCoreTotal = 64
+const fixitCoreTotal = 65
 
 type scoreKeeper struct {
 	t     *testing.T
@@ -233,6 +233,26 @@ func TestFixItScore(t *testing.T) {
 		symlinkBlocked = safeErr != nil && readFile(t, outsidePath) == outsideRaw
 	}
 	s.ck("path.rejectSymlinkEscape", symlinkBlocked)
+
+	// 新建文件同样必须拒绝目录 symlink 逃逸，不能在站点外创建文章
+	newPathSite := filepath.Join(pathBase, "new-site")
+	newPathContent := filepath.Join(newPathSite, "content")
+	newPathOutside := filepath.Join(pathBase, "new-outside")
+	if err := os.MkdirAll(newPathContent, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(newPathOutside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	newSymlinkBlocked := false
+	if err := os.Symlink(newPathOutside, filepath.Join(newPathContent, "posts")); err != nil {
+		t.Logf("directory symlink unavailable: %v", err)
+	} else {
+		createErr := CreateFallbackPost(newPathSite, "posts/escape.md", "Escape")
+		_, outsideCreateErr := os.Stat(filepath.Join(newPathOutside, "escape.md"))
+		newSymlinkBlocked = createErr != nil && os.IsNotExist(outsideCreateErr)
+	}
+	s.ck("newcontent.rejectSymlinkDir", newSymlinkBlocked)
 
 	yamlApp := NewApp(filepath.Join(t.TempDir(), "config.json"))
 	yamlApp.SetConfig(Config{SiteDir: yamlSite, HugoBin: hugoBin})

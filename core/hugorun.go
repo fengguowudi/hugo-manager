@@ -10,7 +10,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -153,9 +152,13 @@ func (a *App) NewContent(rel, kind, title string) error {
 	if rel == "" || strings.Contains(rel, "..") { // 防目录穿越（hugo new 路径同样要守）
 		return errors.New("非法路径")
 	}
+	contentRel := ContentRelPath(cfg.SiteDir, rel)
+	p, pathErr := safePathInRoot(cfg.SiteDir, contentRel)
+	if pathErr != nil {
+		return pathErr
+	}
 	bin, err := a.resolveHugo(cfg)
 	if err == nil {
-		contentRel := ContentRelPath(cfg.SiteDir, rel)
 		args := []string{"new"}
 		if kind != "" {
 			args = append(args, "-k", kind)
@@ -168,7 +171,6 @@ func (a *App) NewContent(rel, kind, title string) error {
 			return fmt.Errorf("hugo new 失败: %s", strings.TrimSpace(string(out)))
 		}
 		if title != "" {
-			p := filepath.Join(cfg.SiteDir, filepath.FromSlash(contentRel))
 			fmFmt, _, _, body, _, err := ParsePost(p)
 			if err != nil {
 				return fmt.Errorf("读取新文章失败: %w", err)
@@ -188,14 +190,21 @@ func (a *App) NewContent(rel, kind, title string) error {
 // CreateFallbackPost 无 hugo 二进制时的兜底：content/<rel> 写最简模板。
 // 识别到主题（如 FixIt）时套用该主题的字段布局。
 func CreateFallbackPost(siteDir, rel, title string) error {
-	if rel == "" || strings.Contains(rel, "..") { // 与 SafeSitePath 同一规则，防目录穿越
+	if siteDir == "" {
+		return errors.New("站点目录不能为空")
+	}
+	if rel == "" || strings.Contains(rel, "..") {
 		return errors.New("非法路径")
 	}
 	if title == "" {
 		title = strings.TrimSuffix(rel, ".md")
 		title = strings.NewReplacer("-", " ", "_", " ").Replace(title)
 	}
-	p := filepath.Join(siteDir, filepath.FromSlash(ContentRelPath(siteDir, rel)))
+	contentRel := ContentRelPath(siteDir, rel)
+	p, err := safePathInRoot(siteDir, contentRel)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(dirOf(p), 0o755); err != nil {
 		return err
 	}
