@@ -158,6 +158,7 @@ func (a *App) BuildState() map[string]any {
 	st["posts"] = posts
 	st["countTotal"], st["countDrafts"] = total, drafts
 	st["sections"] = secList
+	st["theme"] = DetectTheme(cfg.SiteDir)
 	return st
 }
 

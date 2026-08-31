@@ -1,7 +1,7 @@
 package core
 
 // FixIt 主题适配基准：对 .auto/fixtures/site（真实 FixIt 主题站点）执行
-// 行为级检查，输出 METRIC fixit_score=N。每个检查 1 分，共 fixitTotal 分。
+// 行为级检查，输出 METRIC fixit_core=N。每个检查 1 分，共 fixitCoreTotal 分。
 // 本测试永不失败（只计分）；正确性由 checks.sh 与检查项本身保证。
 
 import (
@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-const fixitTotal = 20
+const fixitCoreTotal = 21
 
 type scoreKeeper struct {
 	t     *testing.T
@@ -105,6 +105,9 @@ func TestFixItScore(t *testing.T) {
 	s.ck("site.title", title == "Fixture Blog")
 	s.ck("site.baseURL", baseURL == "https://fixture.example.com/")
 	s.ck("site.detectTheme", DetectTheme(site) == "FixIt")
+	a := NewApp(filepath.Join(t.TempDir(), "config.json"))
+	a.SetConfig(Config{SiteDir: site})
+	s.ck("state.theme", a.BuildState()["theme"] == "FixIt")
 
 	// ---- 解析 ----
 	helloRel := filepath.Join("content", "posts", "hello-fixit.md")
@@ -195,6 +198,6 @@ func TestFixItScore(t *testing.T) {
 	}
 	s.ck("e2e.buildAfterEdit", hugoBuild(t, hugoBin, editSite, themesDir, filepath.Join(t.TempDir(), "public")))
 
-	fmt.Printf("METRIC fixit_score=%d\n", s.score)
-	fmt.Printf("METRIC fixit_total=%d\n", fixitTotal)
+	fmt.Printf("METRIC fixit_core=%d\n", s.score)
+	fmt.Printf("METRIC fixit_core_total=%d\n", fixitCoreTotal)
 }

@@ -45,6 +45,9 @@ type nativeUI struct {
 	postDraft                          *widget.Check
 	logs                               *widget.Entry
 	siteLabel                          *widget.Label
+	theme                              string          // 当前站点主题（用于额外表单缓存）
+	extraBox                           *fyne.Container // 主题专有字段表单容器
+	extraWidgets                       map[string]fyne.CanvasObject
 	views                              []fyne.CanvasObject
 }
 
@@ -123,6 +126,7 @@ func iosCard(title string, objects ...fyne.CanvasObject) fyne.CanvasObject {
 
 func (ui *nativeUI) refresh() {
 	cfg := ui.a.ConfigSnapshot()
+	ui.theme = "" // 站点可能已换，强制重建额外表单
 	if cfg.SiteDir == "" {
 		if ui.siteLabel != nil {
 			ui.siteLabel.SetText("未配置站点")
@@ -269,11 +273,13 @@ func (ui *nativeUI) makeEditor() *fyne.Container {
 		widget.NewFormItem("分类", ui.postCategories), widget.NewFormItem("摘要", ui.postDescription),
 		widget.NewFormItem("状态", ui.postDraft),
 	)
+	ui.extraBox = container.NewVBox()
+	formCol := container.NewVBox(form, ui.extraBox)
 	save := widget.NewButton("保存", func() { ui.savePost() })
 	save.Importance = widget.HighImportance
 	deleteBtn := widget.NewButton("删除", func() { ui.deletePost() })
 	deleteBtn.Importance = widget.DangerImportance
-	split := container.NewVSplit(container.NewVScroll(form), body)
+	split := container.NewVSplit(container.NewVScroll(formCol), body)
 	split.Offset = 0.42
 	statusLine := container.NewBorder(widget.NewSeparator(), nil, nil, nil, container.NewPadded(ui.hint))
 	return container.NewBorder(iosHeader("编辑器", deleteBtn, save), statusLine, nil, nil, split)
@@ -311,6 +317,7 @@ func (ui *nativeUI) openPost(path string) {
 	ui.postDescription.SetText(fields["description"])
 	ui.postBody.SetText(body)
 	ui.postDraft.SetChecked(fields["draft"] == "true")
+	ui.loadExtraFields(fields, arrays)
 	ui.dirty = false
 	ui.hint.SetText(fmt.Sprintf("正文 %d 字", len([]rune(ui.postBody.Text))))
 }
@@ -326,6 +333,15 @@ func (ui *nativeUI) savePost() {
 	}
 	fields := map[string]string{"title": ui.postTitle.Text, "date": ui.postDate.Text, "slug": ui.postSlug.Text, "description": ui.postDescription.Text, "draft": strconv.FormatBool(ui.postDraft.Checked)}
 	arrays := map[string][]string{"tags": splitNative(ui.postTags.Text), "categories": splitNative(ui.postCategories.Text)}
+	if len(ui.extraWidgets) > 0 { // 合并主题专有字段
+		ef, ea := collectExtra(core.ThemeSchema(ui.theme), ui.extraWidgets)
+		for k, v := range ef {
+			fields[k] = v
+		}
+		for k, v := range ea {
+			arrays[k] = v
+		}
+	}
 	if err := core.SavePost(p, fields, arrays, ui.postBody.Text); err != nil {
 		ui.showError(err)
 		return
@@ -724,4 +740,101 @@ func (t iosTheme) Size(name fyne.ThemeSizeName) float32 {
 func (t iosTheme) Font(style fyne.TextStyle) fyne.Resource { return t.Theme.Font(style) }
 func (t iosTheme) Icon(name fyne.ThemeIconName) fyne.Resource {
 	return t.Theme.Icon(name)
+}
+
+// ---- 主题专有字段（如 FixIt）的额外表单 ----
+
+// defaultField 是编辑器固定表单已有的字段（额外表单不重复）。
+func defaultField(k string) bool {
+	switch k {
+	case "title", "date", "slug", "tags", "categories", "description", "draft":
+		return true
+	}
+	return false
+}
+
+// buildExtraFields 按主题方案构造额外表单项（默认字段不重复）。
+func buildExtraFields(schema []core.Field) (*widget.Form, map[string]fyne.CanvasObject) {
+	form := widget.NewForm()
+	widgets := map[string]fyne.CanvasObject{}
+	for _, f := range schema {
+		if defaultField(f.Key) {
+			continue
+		}
+		if f.Kind == "bool" {
+			c := widget.NewCheck("", nil)
+			form.Append(f.Label, c)
+			widgets[f.Key] = c
+		} else { // text / number / date / list 都用单行输入框
+			e := widget.NewEntry()
+			form.Append(f.Label, e)
+			widgets[f.Key] = e
+		}
+	}
+	return form, widgets
+}
+
+// collectExtra 收集额外表单值为 fields/arrays。
+func collectExtra(schema []core.Field, widgets map[string]fyne.CanvasObject) (map[string]string, map[string][]string) {
+	fields := map[string]string{}
+	arrays := map[string][]string{}
+	for _, f := range schema {
+		w, ok := widgets[f.Key]
+		if !ok {
+			continue
+		}
+		switch f.Kind {
+		case "bool":
+			fields[f.Key] = strconv.FormatBool(w.(*widget.Check).Checked)
+		case "list":
+			arrays[f.Key] = splitNative(w.(*widget.Entry).Text)
+		default:
+			fields[f.Key] = strings.TrimSpace(w.(*widget.Entry).Text)
+		}
+	}
+	return fields, arrays
+}
+
+// fillExtra 用解析结果回填额外表单。
+func fillExtra(schema []core.Field, widgets map[string]fyne.CanvasObject, fields map[string]string, arrays map[string][]string) {
+	for _, f := range schema {
+		w, ok := widgets[f.Key]
+		if !ok {
+			continue
+		}
+		switch f.Kind {
+		case "bool":
+			w.(*widget.Check).SetChecked(fields[f.Key] == "true")
+		case "list":
+			w.(*widget.Entry).SetText(strings.Join(arrays[f.Key], ", "))
+		default:
+			w.(*widget.Entry).SetText(fields[f.Key])
+		}
+	}
+}
+
+// loadExtraFields 按当前站点主题重建额外表单（主题变化时）并回填。
+func (ui *nativeUI) loadExtraFields(fields map[string]string, arrays map[string][]string) {
+	theme := core.DetectTheme(ui.a.ConfigSnapshot().SiteDir)
+	if theme != ui.theme {
+		ui.theme = theme
+		form, widgets := buildExtraFields(core.ThemeSchema(theme))
+		ui.extraWidgets = widgets
+		ui.extraBox.Objects = nil
+		if len(widgets) > 0 {
+			ui.extraBox.Objects = []fyne.CanvasObject{widget.NewSeparator(), form}
+		}
+		ui.extraBox.Refresh()
+		for _, w := range widgets { // 改动即标记未保存
+			switch w := w.(type) {
+			case *widget.Entry:
+				w.OnChanged = func(string) { ui.dirty = true }
+			case *widget.Check:
+				w.OnChanged = func(bool) { ui.dirty = true }
+			}
+		}
+	}
+	if len(ui.extraWidgets) > 0 {
+		fillExtra(core.ThemeSchema(theme), ui.extraWidgets, fields, arrays)
+	}
 }
