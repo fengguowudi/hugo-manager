@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-const fixitCoreTotal = 35
+const fixitCoreTotal = 36
 
 type scoreKeeper struct {
 	t     *testing.T
@@ -110,6 +110,7 @@ func TestFixItScore(t *testing.T) {
 	s.ck("state.theme", a.BuildState()["theme"] == "FixIt")
 	s.ck("state.encryptedCount", a.BuildState()["countEncrypted"] == 1) // locked-weighted.md 有 password
 	s.ck("state.expiredCount", a.BuildState()["countExpired"] == 1)     // expired.md 的 expiryDate 已过
+	s.ck("state.scheduledCount", a.BuildState()["countScheduled"] == 1) // scheduled.md 的 publishDate 在未来
 
 	// ---- 解析 ----
 	helloRel := filepath.Join("content", "posts", "hello-fixit.md")

@@ -24,22 +24,35 @@ type Post struct {
 	Draft     bool   `json:"draft"`
 	Encrypted bool   `json:"encrypted"` // 含 password（FixIt 内容加密，构建后需 @hugo-fixit/encrypt）
 	Expired   bool   `json:"expired"`   // expiryDate 已过（Hugo 构建时会静默跳过）
+	Scheduled bool   `json:"scheduled"` // publishDate 在未来（到时间前 Hugo 不发布）
 	Date      string `json:"date"`      // front matter 原始字符串（ISO 排序友好）
 	Kind      string `json:"kind"`      // page=普通文章 section=列表页(_index.md) bundle=页面包(index.md)
 }
 
-// expired 判断 expiryDate 是否已过（兼容 RFC3339 与纯日期）。
-func expired(v string) bool {
+// parseFMDate 解析 front matter 日期（RFC3339 或纯日期）；失败返回 false。
+func parseFMDate(v string) (time.Time, bool) {
 	v = strings.TrimSpace(v)
 	if v == "" {
-		return false
+		return time.Time{}, false
 	}
 	for _, layout := range []string{time.RFC3339, "2006-01-02"} {
 		if t, err := time.Parse(layout, v); err == nil {
-			return t.Before(time.Now())
+			return t, true
 		}
 	}
-	return false // 解析不了就不过期，不误报
+	return time.Time{}, false // 解析不了不算数，不误报
+}
+
+// expired 判断 expiryDate 是否已过（Hugo 构建时静默跳过）。
+func expired(v string) bool {
+	t, ok := parseFMDate(v)
+	return ok && t.Before(time.Now())
+}
+
+// scheduled 判断 publishDate 是否在未来（到时间前 Hugo 不发布）。
+func scheduled(v string) bool {
+	t, ok := parseFMDate(v)
+	return ok && t.After(time.Now())
 }
 
 var (
@@ -360,8 +373,9 @@ func ListPosts(siteDir string) ([]Post, error) {
 		post := Post{
 			Path: rel, Title: title,
 			Draft: fields["draft"] == "true", Encrypted: fields["password"] != "",
-			Expired: expired(fields["expiryDate"]),
-			Date:    fields["date"],
+			Expired:   expired(fields["expiryDate"]),
+			Scheduled: scheduled(fields["publishDate"]),
+			Date:      fields["date"],
 		}
 		parts := strings.Split(rel, "/")
 		if len(parts) > 2 {

@@ -178,6 +178,9 @@ func (ui *nativeUI) overview() fyne.CanvasObject {
 		if n, _ := st["countExpired"].(int); n > 0 {
 			text += fmt.Sprintf("\n⏳ 已过期文章 %d 篇：expiryDate 已过，Hugo 构建不会发布它们", n)
 		}
+		if n, _ := st["countScheduled"].(int); n > 0 {
+			text += fmt.Sprintf("\n📅 定时发布文章 %d 篇：publishDate 在未来，到时间前 Hugo 构建不会发布", n)
+		}
 		info.SetText(text)
 	}
 	update()
@@ -211,6 +214,9 @@ func (ui *nativeUI) content() fyne.CanvasObject {
 		}
 		if p.Expired {
 			state += "·已过期"
+		}
+		if p.Scheduled {
+			state += "·定时"
 		}
 		if p.Encrypted {
 			state += "·加密"

@@ -136,7 +136,7 @@ func (a *App) BuildState() map[string]any {
 	}
 	title, baseURL := SiteInfo(cfg.SiteDir)
 	posts, _ := ListPosts(cfg.SiteDir)
-	total, drafts, encrypted, expiredN := 0, 0, 0, 0
+	total, drafts, encrypted, expiredN, scheduledN := 0, 0, 0, 0, 0
 	secs := map[string]bool{}
 	for _, p := range posts {
 		if p.Kind == "section" {
@@ -152,6 +152,9 @@ func (a *App) BuildState() map[string]any {
 		if p.Expired {
 			expiredN++
 		}
+		if p.Scheduled {
+			scheduledN++
+		}
 		if p.Section != "" {
 			secs[p.Section] = true
 		}
@@ -162,7 +165,7 @@ func (a *App) BuildState() map[string]any {
 	}
 	st["siteTitle"], st["baseURL"] = title, baseURL
 	st["posts"] = posts
-	st["countTotal"], st["countDrafts"], st["countEncrypted"], st["countExpired"] = total, drafts, encrypted, expiredN
+	st["countTotal"], st["countDrafts"], st["countEncrypted"], st["countExpired"], st["countScheduled"] = total, drafts, encrypted, expiredN, scheduledN
 	st["sections"] = secList
 	st["theme"] = DetectTheme(cfg.SiteDir)
 	return st
