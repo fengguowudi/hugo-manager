@@ -181,6 +181,9 @@ func (ui *nativeUI) overview() fyne.CanvasObject {
 		if n, _ := st["countScheduled"].(int); n > 0 {
 			text += fmt.Sprintf("\n📅 定时发布文章 %d 篇：publishDate 在未来，到时间前 Hugo 构建不会发布", n)
 		}
+		if w, _ := st["hugoCompat"].(string); w != "" {
+			text += "\n⚠️ " + w
+		}
 		info.SetText(text)
 	}
 	update()

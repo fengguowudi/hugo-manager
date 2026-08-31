@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -67,6 +68,61 @@ func DetectTheme(siteDir string) string {
 		return e.Name()
 	}
 	return ""
+}
+
+var reHugoVersion = regexp.MustCompile(`v([0-9]+\.[0-9]+\.[0-9]+)`)
+
+// ParseHugoVersion 从 `hugo version` 输出提取语义版本，如 "0.165.0"。
+func ParseHugoVersion(out string) string {
+	if m := reHugoVersion.FindStringSubmatch(out); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+// knownMinHugo 主题要求的最低 Hugo 版本兜底表（站点内读不到 theme.toml 时用，
+// 值来自对应主题当前版本的 theme.toml）。
+var knownMinHugo = map[string]string{"FixIt": "0.161.0"}
+
+var reMinVersion = regexp.MustCompile(`(?m)^\s*min_version\s*=\s*"([^"]+)"`)
+
+// ThemeMinHugo 返回主题要求的最低 Hugo 版本：优先站点 themes/<name>/theme.toml，
+// 其次内置兜底表；未知返回空串。
+func ThemeMinHugo(siteDir, theme string) string {
+	if theme == "" {
+		return ""
+	}
+	if b, err := os.ReadFile(filepath.Join(siteDir, "themes", theme, "theme.toml")); err == nil {
+		if m := reMinVersion.FindStringSubmatch(string(b)); m != nil {
+			return m[1]
+		}
+	}
+	return knownMinHugo[theme]
+}
+
+// CompatWarning 当 hugo version 输出显示版本低于主题最低要求时返回中文警告，否则空串。
+func CompatWarning(hugoVersionOut, minVer, theme string) string {
+	v := ParseHugoVersion(hugoVersionOut)
+	if v == "" || minVer == "" || theme == "" {
+		return ""
+	}
+	if semverLess(v, minVer) {
+		return "Hugo 版本 v" + v + " 低于主题 " + theme + " 要求的最低版本 " + minVer + "，构建可能失败，请升级 Hugo"
+	}
+	return ""
+}
+
+// semverLess 比较 x.y.z 版本号（数值逐段比较）。
+func semverLess(a, b string) bool {
+	pa, pb := strings.Split(a, "."), strings.Split(b, ".")
+	for i := 0; i < len(pa) && i < len(pb); i++ {
+		na, _ := strconv.Atoi(pa[i])
+		nb, _ := strconv.Atoi(pb[i])
+		if na != nb {
+			return na < nb
+		}
+	}
+	return len(pa) < len(pb)
 }
 
 // ThemeSchema 返回该主题推荐的可编辑字段；任何主题都至少有通用字段，

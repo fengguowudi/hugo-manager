@@ -168,6 +168,9 @@ func (a *App) BuildState() map[string]any {
 	st["countTotal"], st["countDrafts"], st["countEncrypted"], st["countExpired"], st["countScheduled"] = total, drafts, encrypted, expiredN, scheduledN
 	st["sections"] = secList
 	st["theme"] = DetectTheme(cfg.SiteDir)
+	if w := CompatWarning(a.HugoVersionSnapshot(), ThemeMinHugo(cfg.SiteDir, st["theme"].(string)), st["theme"].(string)); w != "" {
+		st["hugoCompat"] = w
+	}
 	return st
 }
 

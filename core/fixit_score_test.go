@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-const fixitCoreTotal = 36
+const fixitCoreTotal = 39
 
 type scoreKeeper struct {
 	t     *testing.T
@@ -97,7 +97,7 @@ func readFile(t *testing.T, p string) string {
 }
 
 func TestFixItScore(t *testing.T) {
-	_, site, hugoBin, themesDir := benchPaths(t)
+	root, site, hugoBin, themesDir := benchPaths(t)
 	s := &scoreKeeper{t: t}
 
 	// ---- 站点级 ----
@@ -111,6 +111,19 @@ func TestFixItScore(t *testing.T) {
 	s.ck("state.encryptedCount", a.BuildState()["countEncrypted"] == 1) // locked-weighted.md 有 password
 	s.ck("state.expiredCount", a.BuildState()["countExpired"] == 1)     // expired.md 的 expiryDate 已过
 	s.ck("state.scheduledCount", a.BuildState()["countScheduled"] == 1) // scheduled.md 的 publishDate 在未来
+
+	// ---- Hugo 版本与主题兼容性（FixIt 要求 hugo >= theme.toml min_version）----
+	s.ck("parse.hugoVersion", ParseHugoVersion("hugo v0.165.0-76a5e18+extended windows/amd64 BuildDate=2026-08-12") == "0.165.0")
+
+	old := NewApp(filepath.Join(t.TempDir(), "config.json"))
+	old.SetConfig(Config{SiteDir: site, HugoBin: filepath.Join(root, ".auto", "fixtures", "fakehugo", "hugo.bat")})
+	old.Probe() // 假 hugo 报告 v0.127.0
+	s.ck("state.hugoCompatOld", strings.Contains(fmt.Sprint(old.BuildState()["hugoCompat"]), "0.161.0"))
+
+	a.SetConfig(Config{SiteDir: site, HugoBin: hugoBin})
+	a.Probe() // 真 hugo v0.165.0
+	_, hasWarn := a.BuildState()["hugoCompat"]
+	s.ck("state.hugoCompatNew", !hasWarn)
 
 	// ---- 解析 ----
 	helloRel := filepath.Join("content", "posts", "hello-fixit.md")

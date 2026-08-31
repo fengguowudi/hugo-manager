@@ -1,7 +1,7 @@
 package main
 
 // FixIt 主题 UI 层适配基准：编辑器按 ThemeSchema 渲染主题专有字段，
-// 并能无损往返（填入 → 收集）。输出 METRIC fixit_ui=N（共 8 分）。
+// 并能无损往返（填入 → 收集）。输出 METRIC fixit_ui=N（共 9 分）。
 
 import (
 	"fmt"
@@ -109,6 +109,19 @@ func TestFixItUI(t *testing.T) {
 
 	// u7: 概览提示定时发布文章（fixture 有 1 篇 publishDate 在未来）
 	ck("ui.scheduledHint", strings.Contains(texts.String(), "定时发布"))
+
+	// u8: 概览提示 Hugo 版本不满足主题要求（假 hugo 报 v0.127.0 < FixIt 0.161.0）
+	oldBin, err3 := filepath.Abs(filepath.Join(".auto", "fixtures", "fakehugo", "hugo.bat"))
+	if err3 != nil {
+		t.Fatal(err3)
+	}
+	oldApp := core.NewApp(filepath.Join(t.TempDir(), "config.json"))
+	oldApp.SetConfig(core.Config{SiteDir: site, HugoBin: oldBin})
+	oldApp.Probe()
+	ui2 := &nativeUI{a: oldApp}
+	var texts2 strings.Builder
+	collectTexts(ui2.overview(), &texts2)
+	ck("ui.compatHint", strings.Contains(texts2.String(), "0.161.0"))
 	fmt.Printf("METRIC fixit_ui=%d\n", score)
 }
 
