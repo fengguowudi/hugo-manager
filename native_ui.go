@@ -18,17 +18,19 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/theme"
+
 	"fyne.io/fyne/v2/widget"
+	"hugo-manager/core"
 )
 
 // nativeUI is the cross-platform shell. Business operations stay in App/content.go/hugorun.go.
 type nativeUI struct {
-	a                                  *App
+	a                                  *core.App
 	win                                fyne.Window
 	pages                              *fyne.Container
 	nav                                []*widget.Button
-	posts                              []Post
-	visible                            []Post
+	posts                              []core.Post
+	visible                            []core.Post
 	list                               *widget.List
 	editor                             *fyne.Container
 	current                            string
@@ -46,7 +48,7 @@ type nativeUI struct {
 	views                              []fyne.CanvasObject
 }
 
-func runNativeApp(a *App) {
+func runNativeApp(a *core.App) {
 	fyneApp := app.New()
 	fyneApp.Settings().SetTheme(newIOSTheme())
 	ui := &nativeUI{a: a}
@@ -120,17 +122,17 @@ func iosCard(title string, objects ...fyne.CanvasObject) fyne.CanvasObject {
 }
 
 func (ui *nativeUI) refresh() {
-	cfg := ui.a.cfgSnapshot()
+	cfg := ui.a.ConfigSnapshot()
 	if cfg.SiteDir == "" {
 		if ui.siteLabel != nil {
 			ui.siteLabel.SetText("未配置站点")
 		}
 	} else {
-		posts, _ := listPosts(cfg.SiteDir)
+		posts, _ := core.ListPosts(cfg.SiteDir)
 		ui.posts = posts
 		ui.applyFilter()
 		if ui.siteLabel != nil {
-			name, _ := siteInfo(cfg.SiteDir)
+			name, _ := core.SiteInfo(cfg.SiteDir)
 			ui.siteLabel.SetText(fallback(name, filepath.Base(cfg.SiteDir)))
 		}
 	}
@@ -149,7 +151,7 @@ func (ui *nativeUI) refresh() {
 }
 
 func (ui *nativeUI) overview() fyne.CanvasObject {
-	cfg := ui.a.cfgSnapshot()
+	cfg := ui.a.ConfigSnapshot()
 	if cfg.SiteDir == "" {
 		welcome := container.NewVBox(
 			widget.NewLabelWithStyle("欢迎使用 Hugo 管理器", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
@@ -162,7 +164,7 @@ func (ui *nativeUI) overview() fyne.CanvasObject {
 	info := widget.NewLabel("")
 	info.Wrapping = fyne.TextWrapWord
 	update := func() {
-		st := ui.a.buildState()
+		st := ui.a.BuildState()
 		info.SetText(fmt.Sprintf("站点标题：%v\nbaseURL：%v\n站点目录：%v\nHugo：%v\n内容：%v 篇（草稿 %v 篇）",
 			st["siteTitle"], st["baseURL"], st["siteDir"], st["hugoVersion"], st["countTotal"], st["countDrafts"]))
 	}
@@ -286,12 +288,12 @@ func (ui *nativeUI) openPost(path string) {
 		}, ui.win)
 		return
 	}
-	p, err := ui.a.safeSitePath(path)
+	p, err := ui.a.SafeSitePath(path)
 	if err != nil {
 		ui.showError(err)
 		return
 	}
-	format, fields, arrays, body, _, err := parsePost(p)
+	format, fields, arrays, body, _, err := core.ParsePost(p)
 	if err != nil {
 		ui.showError(err)
 		return
@@ -317,14 +319,14 @@ func (ui *nativeUI) savePost() {
 	if ui.current == "" {
 		return
 	}
-	p, err := ui.a.safeSitePath(ui.current)
+	p, err := ui.a.SafeSitePath(ui.current)
 	if err != nil {
 		ui.showError(err)
 		return
 	}
 	fields := map[string]string{"title": ui.postTitle.Text, "date": ui.postDate.Text, "slug": ui.postSlug.Text, "description": ui.postDescription.Text, "draft": strconv.FormatBool(ui.postDraft.Checked)}
 	arrays := map[string][]string{"tags": splitNative(ui.postTags.Text), "categories": splitNative(ui.postCategories.Text)}
-	if err := savePost(p, fields, arrays, ui.postBody.Text); err != nil {
+	if err := core.SavePost(p, fields, arrays, ui.postBody.Text); err != nil {
 		ui.showError(err)
 		return
 	}
@@ -351,7 +353,7 @@ func (ui *nativeUI) newPost() {
 		section = "posts"
 	}
 	rel := filepath.Join(section, time.Now().Format("20060102-150405")+".md")
-	if err := ui.a.newContent(filepath.ToSlash(rel), "", ui.title.Text); err != nil {
+	if err := ui.a.NewContent(filepath.ToSlash(rel), "", ui.title.Text); err != nil {
 		ui.showError(err)
 		return
 	}
@@ -367,7 +369,7 @@ func (ui *nativeUI) deletePost() {
 		if !ok {
 			return
 		}
-		p, err := ui.a.safeSitePath(ui.current)
+		p, err := ui.a.SafeSitePath(ui.current)
 		if err == nil {
 			err = os.Remove(p)
 		}
@@ -381,7 +383,7 @@ func (ui *nativeUI) deletePost() {
 }
 
 func (ui *nativeUI) settings() fyne.CanvasObject {
-	cfg := ui.a.cfgSnapshot()
+	cfg := ui.a.ConfigSnapshot()
 	ui.bin = widget.NewEntry()
 	ui.bin.SetText(cfg.HugoBin)
 	ui.bin.SetPlaceHolder("留空则从 PATH 查找")
@@ -432,18 +434,15 @@ func (ui *nativeUI) saveSettings() {
 	if port <= 0 {
 		port = 1313
 	}
-	cfg := Config{HugoBin: strings.TrimSpace(ui.bin.Text), SiteDir: strings.TrimSpace(ui.siteDir.Text), ServerPort: port, IncludeDrafts: ui.includeDrafts.Checked}
+	cfg := core.Config{HugoBin: strings.TrimSpace(ui.bin.Text), SiteDir: strings.TrimSpace(ui.siteDir.Text), ServerPort: port, IncludeDrafts: ui.includeDrafts.Checked}
 	if cfg.SiteDir != "" {
 		if err := validateSiteDir(cfg.SiteDir); err != nil {
 			ui.showError(err)
 			return
 		}
 	}
-	ui.a.mu.Lock()
-	ui.a.cfg = cfg
-	ui.a.mu.Unlock()
-	ui.a.saveCfg()
-	ui.a.probe()
+	ui.a.SetConfig(cfg)
+	ui.a.Probe()
 	ui.refresh()
 }
 
@@ -471,7 +470,7 @@ func (ui *nativeUI) build() fyne.CanvasObject {
 	start := widget.NewButtonWithIcon("启动预览服务器", theme.MediaPlayIcon(), func() { ui.startServer() })
 	start.Importance = widget.HighImportance
 	stop := widget.NewButtonWithIcon("停止", theme.MediaStopIcon(), func() {
-		if err := ui.a.stopServer(); err != nil {
+		if err := ui.a.StopServer(); err != nil {
 			ui.showError(err)
 		}
 		ui.refresh()
@@ -479,7 +478,7 @@ func (ui *nativeUI) build() fyne.CanvasObject {
 	run := widget.NewButtonWithIcon("开始构建", theme.ViewRefreshIcon(), func() { ui.buildSite() })
 	reload := widget.NewButtonWithIcon("刷新日志", theme.ContentClearIcon(), func() { ui.loadLogs() })
 	open := widget.NewButtonWithIcon("打开浏览器", theme.ComputerIcon(), func() {
-		openBrowser(fmt.Sprintf("http://localhost:%d", ui.a.cfgSnapshot().ServerPort))
+		openBrowser(fmt.Sprintf("http://localhost:%d", ui.a.ConfigSnapshot().ServerPort))
 	})
 	return container.NewBorder(iosHeader("构建与预览", start, stop, run, reload, open), nil, nil, nil, container.NewPadded(ui.logs))
 }
@@ -498,7 +497,7 @@ func openBrowser(url string) {
 }
 
 func (ui *nativeUI) startServer() {
-	if err := ui.a.startServer(); err != nil {
+	if err := ui.a.StartServer(); err != nil {
 		ui.showError(err)
 		return
 	}
@@ -506,7 +505,7 @@ func (ui *nativeUI) startServer() {
 }
 func (ui *nativeUI) buildSite() {
 	go func() {
-		err := ui.a.runBuild()
+		err := ui.a.RunBuild()
 		fyne.Do(func() {
 			if err != nil {
 				ui.showError(err)
@@ -517,7 +516,7 @@ func (ui *nativeUI) buildSite() {
 	}()
 }
 func (ui *nativeUI) loadLogs() {
-	text := strings.Join(ui.a.hub.historySnapshot(), "\n")
+	text := strings.Join(ui.a.Logs(), "\n")
 	ui.logs.SetText(text)
 	ui.logs.CursorRow, ui.logs.CursorColumn = strings.Count(text, "\n"), 0 // 光标置末行，滚动到底
 	ui.logs.Refresh()

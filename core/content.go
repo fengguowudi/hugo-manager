@@ -1,4 +1,4 @@
-package main
+package core
 
 // 本文件：content/ 目录扫描、front matter 的读取与"外科手术式"写回。
 // 写回策略：只替换被编辑字段的所在行，其余内容（含未知自定义字段）逐字节保留，
@@ -30,9 +30,9 @@ var (
 	reTomlKV = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_-]*)\s*=\s*(.*)$`)
 )
 
-// parsePost 解析一个内容文件：返回 front matter 格式、标量字段、数组字段、正文、原始全文。
+// ParsePost 解析一个内容文件：返回 front matter 格式、标量字段、数组字段、正文、原始全文。
 // 没有 front matter 时 format 为空、body 即全文。
-func parsePost(p string) (fmFmt string, fields map[string]string, arrays map[string][]string, body, raw string, err error) {
+func ParsePost(p string) (fmFmt string, fields map[string]string, arrays map[string][]string, body, raw string, err error) {
 	b, err := os.ReadFile(p)
 	if err != nil {
 		return
@@ -108,9 +108,9 @@ func unquote(v string) string {
 	return v
 }
 
-// savePost 结构化保存：仅改写被编辑字段所在行，正文整体替换，其余保留。
+// SavePost 结构化保存：仅改写被编辑字段所在行，正文整体替换，其余保留。
 // 兼容 CRLF 文件：统一先归一为 LF 再按原换行风格重组，避免 \r 翻倍。
-func savePost(p string, fields map[string]string, arrays map[string][]string, body string) error {
+func SavePost(p string, fields map[string]string, arrays map[string][]string, body string) error {
 	b, err := os.ReadFile(p)
 	if err != nil {
 		return err
@@ -233,8 +233,8 @@ func delLine(lines []string, key string) []string {
 	return out
 }
 
-// listPosts 扫描 content/ 下全部 Markdown 文件（跳过隐藏目录）。
-func listPosts(siteDir string) ([]Post, error) {
+// ListPosts 扫描 content/ 下全部 Markdown 文件（跳过隐藏目录）。
+func ListPosts(siteDir string) ([]Post, error) {
 	root := filepath.Join(siteDir, "content")
 	var posts []Post
 	if _, err := os.Stat(root); err != nil {
@@ -256,7 +256,7 @@ func listPosts(siteDir string) ([]Post, error) {
 		}
 		rel, _ := filepath.Rel(siteDir, p)
 		rel = filepath.ToSlash(rel)
-		_, fields, _, _, _, _ := parsePost(p)
+		_, fields, _, _, _, _ := ParsePost(p)
 		title := fields["title"]
 		if title == "" { // 无标题时用文件名兜底
 			base := strings.TrimSuffix(name, filepath.Ext(name))
@@ -293,8 +293,8 @@ func listPosts(siteDir string) ([]Post, error) {
 	return posts, nil
 }
 
-// siteInfo 从站点配置文件（hugo.toml/config.toml/...）尽力读出标题与 baseURL。
-func siteInfo(siteDir string) (title, baseURL string) {
+// SiteInfo 从站点配置文件（hugo.toml/config.toml/...）尽力读出标题与 baseURL。
+func SiteInfo(siteDir string) (title, baseURL string) {
 	names := []string{"hugo.toml", "hugo.yaml", "hugo.yml", "config.toml", "config.yaml", "config.yml", "hugo.json", "config.json"}
 	for _, n := range names {
 		b, err := os.ReadFile(filepath.Join(siteDir, n))

@@ -1,0 +1,6 @@
+.auto/bin/
+.auto/themes/
+.auto/log.jsonl
+public/
+resources/
+.hugo_build.lock

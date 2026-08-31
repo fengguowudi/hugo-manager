@@ -1,0 +1,18 @@
+title = "Fixture Blog"
+baseURL = "https://fixture.example.com/"
+ignoreLogs = ["warning-encryption"]
+theme = "FixIt"
+defaultContentLanguage = "zh-cn"
+hasCJKLanguage = true
+
+[markup]
+_merge = "shallow"
+
+[outputs]
+_merge = "shallow"
+
+[taxonomies]
+_merge = "shallow"
+
+[params]
+version = "1.0.X"

@@ -1,4 +1,4 @@
-package main
+package core
 
 // 本文件：hugo 二进制的进程管理 —— 版本探测、预览服务器 (hugo server)、
 // 构建 (hugo)、新建文章 (hugo new)，以及日志推流。
@@ -16,15 +16,6 @@ import (
 	"time"
 )
 
-// probeVersion 运行 `hugo version`（5 秒超时），返回版本输出。
-func probeVersion(bin string) string {
-	out, err := exec.Command(bin, "version").Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
-}
-
 // pipeLogs 把子进程 stdout/stderr 逐行推送到 hub（打上 [预览]/[构建] 标签）。
 func pipeLogs(cmd *exec.Cmd, hub *Hub, label string) error {
 	out, err := cmd.StdoutPipe()
@@ -39,7 +30,7 @@ func pipeLogs(cmd *exec.Cmd, hub *Hub, label string) error {
 		sc := bufio.NewScanner(r)
 		sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 		for sc.Scan() {
-			hub.log("[" + label + "] " + sc.Text())
+			hub.Log("[" + label + "] " + sc.Text())
 		}
 	}
 	go scan(out)
@@ -55,15 +46,15 @@ type serverProc struct {
 	port    int
 }
 
-func (s *serverProc) isRunning() bool {
+func (s *serverProc) IsRunning() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.running
 }
 
-// startServer 启动 `hugo server -D --port N`（-D = 预览含草稿，方便写作）。
-func (a *App) startServer() error {
-	cfg := a.cfgSnapshot()
+// StartServer 启动 `hugo server -D --port N`（-D = 预览含草稿，方便写作）。
+func (a *App) StartServer() error {
+	cfg := a.ConfigSnapshot()
 	if cfg.SiteDir == "" {
 		return errors.New("请先在「设置」中填写站点目录")
 	}
@@ -91,24 +82,24 @@ func (a *App) startServer() error {
 	port := cfg.ServerPort
 	s.mu.Unlock()
 
-	a.hub.log(fmt.Sprintf("预览服务器已启动: http://localhost:%d/", port))
-	a.hub.state()
+	a.hub.Log(fmt.Sprintf("预览服务器已启动: http://localhost:%d/", port))
+	a.hub.State()
 	go func() {
 		err := cmd.Wait()
 		s.mu.Lock()
 		s.cmd, s.running = nil, false
 		s.mu.Unlock()
 		if err != nil {
-			a.hub.log("预览服务器异常退出: " + err.Error())
+			a.hub.Log("预览服务器异常退出: " + err.Error())
 		} else {
-			a.hub.log("预览服务器已停止。")
+			a.hub.Log("预览服务器已停止。")
 		}
-		a.hub.state()
+		a.hub.State()
 	}()
 	return nil
 }
 
-func (a *App) stopServer() error {
+func (a *App) StopServer() error {
 	s := a.srv
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -118,14 +109,14 @@ func (a *App) stopServer() error {
 	return s.cmd.Process.Kill()
 }
 
-// runBuild 同步执行 `hugo [-D]`，日志实时推流，返回构建是否成功。
-func (a *App) runBuild() error {
-	cfg := a.cfgSnapshot()
+// RunBuild 同步执行 `hugo [-D]`，日志实时推流，返回构建是否成功。
+func (a *App) RunBuild() error {
+	cfg := a.ConfigSnapshot()
 	bin, err := a.resolveHugo(cfg)
 	if err != nil {
 		return errors.New("未找到 hugo 可执行文件，请先在「设置」中配置")
 	}
-	if a.srv.isRunning() {
+	if a.srv.IsRunning() {
 		return errors.New("请先停止预览服务器，再执行构建（避免构建锁冲突）")
 	}
 	args := []string{}
@@ -137,24 +128,24 @@ func (a *App) runBuild() error {
 	if err := pipeLogs(cmd, a.hub, "构建"); err != nil {
 		return err
 	}
-	a.hub.log("$ hugo " + strings.Join(args, " "))
+	a.hub.Log("$ hugo " + strings.Join(args, " "))
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("启动失败: %w", err)
 	}
 	err = cmd.Wait()
 	if err != nil {
-		a.hub.log("构建失败: " + err.Error())
+		a.hub.Log("构建失败: " + err.Error())
 	} else {
-		a.hub.log("构建完成，输出目录: public/")
+		a.hub.Log("构建完成，输出目录: public/")
 	}
-	a.hub.state()
+	a.hub.State()
 	return err
 }
 
-// newContent 新建文章：优先 `hugo new`（自动套用站点原型 archetype），
+// NewContent 新建文章：优先 `hugo new`（自动套用站点原型 archetype），
 // hugo 不可用时退化为直接写一个带最简 front matter 的文件。
-func (a *App) newContent(rel, kind, title string) error {
-	cfg := a.cfgSnapshot()
+func (a *App) NewContent(rel, kind, title string) error {
+	cfg := a.ConfigSnapshot()
 	if cfg.SiteDir == "" {
 		return errors.New("请先在「设置」中填写站点目录")
 	}
@@ -173,11 +164,11 @@ func (a *App) newContent(rel, kind, title string) error {
 		}
 		return nil
 	}
-	return createFallbackPost(cfg.SiteDir, rel, title)
+	return CreateFallbackPost(cfg.SiteDir, rel, title)
 }
 
-// createFallbackPost 无 hugo 二进制时的兜底：content/<rel> 写最简模板。
-func createFallbackPost(siteDir, rel, title string) error {
+// CreateFallbackPost 无 hugo 二进制时的兜底：content/<rel> 写最简模板。
+func CreateFallbackPost(siteDir, rel, title string) error {
 	if title == "" {
 		title = strings.TrimSuffix(rel, ".md")
 		title = strings.NewReplacer("-", " ", "_", " ").Replace(title)

@@ -1,4 +1,4 @@
-package main
+package core
 
 import "sync"
 
@@ -9,9 +9,9 @@ type Hub struct {
 	history []string
 }
 
-func newHub() *Hub { return &Hub{} }
+func NewHub() *Hub { return &Hub{} }
 
-func (h *Hub) log(msg string) {
+func (h *Hub) Log(msg string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.history = append(h.history, msg)
@@ -20,9 +20,9 @@ func (h *Hub) log(msg string) {
 	}
 }
 
-func (h *Hub) state() {}
+func (h *Hub) State() {}
 
-func (h *Hub) historySnapshot() []string {
+func (h *Hub) HistorySnapshot() []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	out := make([]string, len(h.history))
