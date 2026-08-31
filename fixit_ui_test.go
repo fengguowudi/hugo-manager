@@ -1,7 +1,7 @@
 package main
 
 // FixIt 主题 UI 层适配基准：编辑器按 ThemeSchema 渲染主题专有字段，
-// 并能无损往返（填入 → 收集）。输出 METRIC fixit_ui=N（共 4 分）。
+// 并能无损往返（填入 → 收集）。输出 METRIC fixit_ui=N（共 5 分）。
 
 import (
 	"fmt"
@@ -39,6 +39,26 @@ func TestFixItUI(t *testing.T) {
 			okAll = false
 		}
 	}
+	// u1b: 页面级开关（toc/math/lightgallery/comment/word_count/reading_time/hidden_from_feed）
+	toggles := []string{"toc", "math", "lightgallery", "comment", "word_count", "reading_time", "hidden_from_feed"}
+	toggleOK := true
+	for _, k := range toggles {
+		if _, ok := widgets[k]; !ok {
+			toggleOK = false
+		}
+	}
+	if len(widgets) > 0 && toggleOK { // 开关必须能经 collect/fill 往返
+		widgets["comment"].(*widget.Check).SetChecked(false)
+		widgets["math"].(*widget.Check).SetChecked(true)
+		fields2, _ := collectExtra(schema, widgets)
+		toggleOK = fields2["comment"] == "false" && fields2["math"] == "true"
+	}
+	// 合并规则：未设置过的 bool=false 不得写入（避免覆盖站点默认）；已有键可关；true 可写
+	mf := map[string]string{}
+	mergeExtras(mf, map[string][]string{}, map[string]string{"toc": "false", "math": "true", "comment": "false"}, nil, schema, map[string]bool{"comment": true})
+	_, tocWritten := mf["toc"]
+	toggleOK = toggleOK && mf["math"] == "true" && mf["comment"] == "false" && !tocWritten
+	ck("ui.pageToggles", toggleOK)
 	for _, k := range []string{"title", "date", "draft", "tags"} { // 默认字段不重复
 		if _, ok := widgets[k]; ok {
 			okAll = false

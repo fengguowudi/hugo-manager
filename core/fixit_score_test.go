@@ -263,7 +263,7 @@ func TestFixItScore(t *testing.T) {
 
 	editSite := copySite(t, site)
 	if err := SavePost(filepath.Join(editSite, helloRel),
-		map[string]string{"title": "端到端编辑", "subtitle": "端到端副标题"},
+		map[string]string{"title": "端到端编辑", "subtitle": "端到端副标题", "toc": "false", "math": "true", "comment": "false"},
 		map[string][]string{"tags": {"hugo", "fixit", "e2e"}},
 		"端到端正文。\n"); err != nil {
 		t.Fatal(err)

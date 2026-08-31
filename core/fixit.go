@@ -94,6 +94,14 @@ func ThemeSchema(theme string) []Field {
 			Field{Key: "hidden_from_related", Label: "相关文章隐藏", Kind: "bool"},
 			Field{Key: "password", Label: "访问密码", Kind: "text"},
 			Field{Key: "message", Label: "密码提示语", Kind: "text"},
+			// 页面级开关（FixIt 支持布尔简写，见 function/param.html）
+			Field{Key: "toc", Label: "目录", Kind: "bool"},
+			Field{Key: "math", Label: "数学公式", Kind: "bool"},
+			Field{Key: "lightgallery", Label: "图片画廊", Kind: "bool"},
+			Field{Key: "comment", Label: "评论", Kind: "bool"},
+			Field{Key: "word_count", Label: "字数统计", Kind: "bool"},
+			Field{Key: "reading_time", Label: "阅读时长", Kind: "bool"},
+			Field{Key: "hidden_from_feed", Label: "订阅源隐藏", Kind: "bool"},
 		)
 	}
 	return fields

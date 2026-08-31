@@ -48,6 +48,7 @@ type nativeUI struct {
 	theme                              string          // 当前站点主题（用于额外表单缓存）
 	extraBox                           *fyne.Container // 主题专有字段表单容器
 	extraWidgets                       map[string]fyne.CanvasObject
+	presentKeys                        map[string]bool // 当前文章 front matter 已有的键
 	views                              []fyne.CanvasObject
 }
 
@@ -334,13 +335,9 @@ func (ui *nativeUI) savePost() {
 	fields := map[string]string{"title": ui.postTitle.Text, "date": ui.postDate.Text, "slug": ui.postSlug.Text, "description": ui.postDescription.Text, "draft": strconv.FormatBool(ui.postDraft.Checked)}
 	arrays := map[string][]string{"tags": splitNative(ui.postTags.Text), "categories": splitNative(ui.postCategories.Text)}
 	if len(ui.extraWidgets) > 0 { // 合并主题专有字段
-		ef, ea := collectExtra(core.ThemeSchema(ui.theme), ui.extraWidgets)
-		for k, v := range ef {
-			fields[k] = v
-		}
-		for k, v := range ea {
-			arrays[k] = v
-		}
+		schema := core.ThemeSchema(ui.theme)
+		ef, ea := collectExtra(schema, ui.extraWidgets)
+		mergeExtras(fields, arrays, ef, ea, schema, ui.presentKeys)
 	}
 	if err := core.SavePost(p, fields, arrays, ui.postBody.Text); err != nil {
 		ui.showError(err)
@@ -815,6 +812,13 @@ func fillExtra(schema []core.Field, widgets map[string]fyne.CanvasObject, fields
 
 // loadExtraFields 按当前站点主题重建额外表单（主题变化时）并回填。
 func (ui *nativeUI) loadExtraFields(fields map[string]string, arrays map[string][]string) {
+	ui.presentKeys = map[string]bool{}
+	for k := range fields {
+		ui.presentKeys[k] = true
+	}
+	for k := range arrays {
+		ui.presentKeys[k] = true
+	}
 	theme := core.DetectTheme(ui.a.ConfigSnapshot().SiteDir)
 	if theme != ui.theme {
 		ui.theme = theme
@@ -836,5 +840,24 @@ func (ui *nativeUI) loadExtraFields(fields map[string]string, arrays map[string]
 	}
 	if len(ui.extraWidgets) > 0 {
 		fillExtra(core.ThemeSchema(theme), ui.extraWidgets, fields, arrays)
+	}
+}
+
+// mergeExtras 把额外表单值并入 fields/arrays。
+// 布尔开关仅在值为 true 或原文已有该键时写入——避免给未设置的文章强写 false，
+// 覆盖 FixIt 的站点级默认（布尔简写与 map 形式等价，见 function/param.html）。
+func mergeExtras(fields map[string]string, arrays map[string][]string, ef map[string]string, ea map[string][]string, schema []core.Field, present map[string]bool) {
+	kinds := map[string]string{}
+	for _, f := range schema {
+		kinds[f.Key] = f.Kind
+	}
+	for k, v := range ef {
+		if kinds[k] == "bool" && v == "false" && !present[k] {
+			continue
+		}
+		fields[k] = v
+	}
+	for k, v := range ea {
+		arrays[k] = v
 	}
 }
