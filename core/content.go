@@ -99,6 +99,9 @@ func ParsePost(p string) (fmFmt string, fields map[string]string, arrays map[str
 		re = reTomlKV
 	}
 	for i := 1; i < end; i++ {
+		if fmFmt == "toml" && isTOMLTableHeader(lines[i]) {
+			break // table 之后的键属于嵌套对象，不是页面根字段
+		}
 		m := re.FindStringSubmatch(lines[i])
 		if m == nil {
 			continue
@@ -296,27 +299,27 @@ func SavePost(p string, fields map[string]string, arrays map[string][]string, bo
 	for _, k := range sortedKeys(fields) {
 		v := fields[k]
 		if v == "" {
-			fm = delLine(fm, k)
+			fm = delLine(fm, k, toml)
 			continue
 		}
 		val := quote(v)
 		if bareValue(v) {
 			val = v
 		}
-		fm = setLine(fm, k, lineFor(k, val))
+		fm = setLine(fm, k, lineFor(k, val), toml)
 	}
 	// 数组字段：空数组 = 删除该字段（含块式列表的残留行）
 	for _, k := range sortedKeys(arrays) {
 		v := arrays[k]
 		if len(v) == 0 {
-			fm = delLine(fm, k)
+			fm = delLine(fm, k, toml)
 			continue
 		}
 		parts := make([]string, len(v))
 		for i, t := range v {
 			parts[i] = quote(t)
 		}
-		fm = setLine(fm, k, lineFor(k, "["+strings.Join(parts, ", ")+"]"))
+		fm = setLine(fm, k, lineFor(k, "["+strings.Join(parts, ", ")+"]"), toml)
 	}
 
 	newLines := append([]string{first}, fm...)
@@ -337,6 +340,11 @@ func SavePost(p string, fields map[string]string, arrays map[string][]string, bo
 func normalizeEOL(s string) string {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	return strings.ReplaceAll(s, "\r", "\n")
+}
+
+func isTOMLTableHeader(line string) bool {
+	v, _ := splitInlineComment(strings.TrimSpace(strings.TrimRight(line, "\r")), true)
+	return strings.HasPrefix(v, "[") && strings.HasSuffix(v, "]")
 }
 
 func keyLineRe(key string) *regexp.Regexp {
@@ -396,25 +404,50 @@ func bracketDepth(s string) int {
 	return d
 }
 
-// setLine 替换 key 所在行（连同其块式内容）；不存在则追加到 front matter 末尾。
-func setLine(lines []string, key, line string) []string {
+func rootFieldLimit(lines []string, toml bool) int {
+	if toml {
+		for i, line := range lines {
+			if isTOMLTableHeader(line) {
+				return i
+			}
+		}
+	}
+	return len(lines)
+}
+
+// setLine 替换页面根 key 所在行（连同块式内容）。
+// TOML 不存在该 key 时插入首个 table 前，避免新键落入最后一个 table。
+func setLine(lines []string, key, line string, toml bool) []string {
 	re := keyLineRe(key)
-	for i, ln := range lines {
-		if re.MatchString(ln) {
-			if suffix := inlineCommentSuffix(ln); suffix != "" {
+	limit := rootFieldLimit(lines, toml)
+	for i := 0; i < limit; i++ {
+		if re.MatchString(lines[i]) {
+			if suffix := inlineCommentSuffix(lines[i]); suffix != "" {
 				line += suffix
 			}
 			return append(lines[:i], append([]string{line}, lines[blockEnd(lines, i):]...)...)
 		}
 	}
+	if toml && limit < len(lines) {
+		insertAt := limit
+		for insertAt > 0 && strings.TrimSpace(lines[insertAt-1]) == "" {
+			insertAt--
+		}
+		out := make([]string, 0, len(lines)+1)
+		out = append(out, lines[:insertAt]...)
+		out = append(out, line)
+		out = append(out, lines[insertAt:]...)
+		return out
+	}
 	return append(lines, line)
 }
 
-// delLine 删除 key 所在行及其块式内容。
-func delLine(lines []string, key string) []string {
+// delLine 删除页面根 key 所在行及其块式内容；TOML table 内同名键不动。
+func delLine(lines []string, key string, toml bool) []string {
 	re := keyLineRe(key)
-	for i, ln := range lines {
-		if re.MatchString(ln) {
+	limit := rootFieldLimit(lines, toml)
+	for i := 0; i < limit; i++ {
+		if re.MatchString(lines[i]) {
 			return append(lines[:i], lines[blockEnd(lines, i):]...)
 		}
 	}

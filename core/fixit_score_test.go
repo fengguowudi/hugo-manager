@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-const fixitCoreTotal = 54
+const fixitCoreTotal = 56
 
 type scoreKeeper struct {
 	t     *testing.T
@@ -423,6 +423,39 @@ func TestFixItScore(t *testing.T) {
 	got = readFile(t, p)
 	s.ck("toml.saveScalar", strings.Contains(got, `subtitle = "新副标"`) && strings.Contains(got, "weight = 8\n") && strings.Contains(got, "date = 2024-02-01T09:00:00+08:00"))
 	s.ck("toml.keepTable", strings.Contains(got, "[repost]\nenable = false\nurl = \"\""))
+
+	// TOML table 内同名键不能覆盖页面根字段；新增根键必须插在首个 table 前
+	tableSite := t.TempDir()
+	tableDir := filepath.Join(tableSite, "content", "posts")
+	if err := os.MkdirAll(tableDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tablePath := filepath.Join(tableDir, "table-collision.md")
+	tableRaw := "+++\ntitle = \"Root Title\"\ndate = 2024-03-01T00:00:00+08:00\ndraft = true\ntags = [\"root\"]\n\n[params]\ntitle = \"Nested Title\"\ndraft = false\ntags = [\"nested\"]\nsubtitle = \"Nested Subtitle\"\n+++\n\nPRIVATE\n"
+	if err := os.WriteFile(tablePath, []byte(tableRaw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fmt3, tableFields, tableArrays, _, _, err := ParsePost(tablePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.ck("toml.rootTableIsolation", fmt3 == "toml" && tableFields["title"] == "Root Title" && tableFields["draft"] == "true" && strings.Join(tableArrays["tags"], ",") == "root")
+
+	if err := SavePost(tablePath, map[string]string{"title": tableFields["title"], "date": tableFields["date"], "draft": tableFields["draft"], "subtitle": "Root Subtitle"}, map[string][]string{"tags": tableArrays["tags"]}, "UPDATED PRIVATE\n"); err != nil {
+		t.Fatal(err)
+	}
+	tableSaved := readFile(t, tablePath)
+	rootSubtitlePos := strings.Index(tableSaved, `subtitle = "Root Subtitle"`)
+	tablePos := strings.Index(tableSaved, "[params]")
+	_, tableFields2, tableArrays2, _, _, err := ParsePost(tablePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tablePosts, _ := ListPosts(tableSite)
+	s.ck("toml.saveRootBeforeTable", rootSubtitlePos >= 0 && rootSubtitlePos < tablePos &&
+		strings.Contains(tableSaved, `subtitle = "Nested Subtitle"`) && tableFields2["draft"] == "true" &&
+		tableFields2["subtitle"] == "Root Subtitle" && strings.Join(tableArrays2["tags"], ",") == "root" &&
+		len(tablePosts) == 1 && tablePosts[0].Draft)
 
 	// ---- TOML 多行行内数组 ----
 	mlRel := filepath.Join("content", "posts", "toml-multiline.md")
