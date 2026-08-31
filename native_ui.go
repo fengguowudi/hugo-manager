@@ -27,7 +27,6 @@ type nativeUI struct {
 	win                                fyne.Window
 	pages                              *fyne.Container
 	nav                                []*widget.Button
-	status                             *widget.Label
 	posts                              []Post
 	visible                            []Post
 	list                               *widget.List
@@ -53,7 +52,6 @@ func runNativeApp(a *App) {
 	ui := &nativeUI{a: a}
 	ui.win = fyneApp.NewWindow("Hugo 管理器")
 	ui.win.Resize(fyne.NewSize(1180, 760))
-	ui.status = widget.NewLabelWithStyle("正在读取站点状态…", fyne.TextAlignLeading, fyne.TextStyle{})
 
 	ui.views = []fyne.CanvasObject{ui.overview(), ui.content(), ui.build(), ui.settings()}
 	ui.pages = container.NewMax(ui.views[0])
@@ -80,8 +78,7 @@ func runNativeApp(a *App) {
 	widthKeeper.SetMinSize(fyne.NewSize(196, 1))
 	sidebar := container.NewStack(canvas.NewRectangle(iosGroupBg), container.NewPadded(container.NewBorder(widthKeeper, nil, nil, nil, sidebarInner)))
 
-	statusBar := container.NewBorder(widget.NewSeparator(), nil, nil, nil, container.NewPadded(ui.status))
-	ui.win.SetContent(container.NewBorder(nil, statusBar, sidebar, nil, ui.pages))
+	ui.win.SetContent(container.NewBorder(nil, nil, sidebar, nil, ui.pages))
 	ui.bindEditorShortcuts()
 	ui.refresh()
 	ui.win.ShowAndRun()
@@ -101,10 +98,6 @@ func (ui *nativeUI) showPage(active int) {
 		}
 		button.Refresh()
 	}
-}
-
-func (ui *nativeUI) setStatus(format string, args ...any) {
-	ui.status.SetText(fmt.Sprintf(format, args...))
 }
 
 // iosHeader renders an iOS style navigation bar: bold title left, actions right, hairline below.
@@ -129,7 +122,6 @@ func iosCard(title string, objects ...fyne.CanvasObject) fyne.CanvasObject {
 func (ui *nativeUI) refresh() {
 	cfg := ui.a.cfgSnapshot()
 	if cfg.SiteDir == "" {
-		ui.setStatus("尚未配置站点")
 		if ui.siteLabel != nil {
 			ui.siteLabel.SetText("未配置站点")
 		}
@@ -141,7 +133,6 @@ func (ui *nativeUI) refresh() {
 			name, _ := siteInfo(cfg.SiteDir)
 			ui.siteLabel.SetText(fallback(name, filepath.Base(cfg.SiteDir)))
 		}
-		ui.setStatus("站点：%s · %d 篇内容", cfg.SiteDir, len(posts))
 	}
 	if ui.bin != nil {
 		ui.bin.SetText(cfg.HugoBin)
@@ -317,12 +308,10 @@ func (ui *nativeUI) openPost(path string) {
 	ui.postDraft.SetChecked(fields["draft"] == "true")
 	ui.dirty = false
 	ui.hint.SetText(fmt.Sprintf("正文 %d 字", len([]rune(ui.postBody.Text))))
-	ui.setStatus("正在编辑：%s", path)
 }
 
 func (ui *nativeUI) savePost() {
 	if ui.current == "" {
-		ui.setStatus("请先从内容列表选择文章")
 		return
 	}
 	p, err := ui.a.safeSitePath(ui.current)
@@ -337,7 +326,6 @@ func (ui *nativeUI) savePost() {
 		return
 	}
 	ui.dirty = false
-	ui.setStatus("已保存：%s", ui.current)
 	ui.refresh()
 }
 
@@ -353,7 +341,6 @@ func splitNative(s string) []string {
 
 func (ui *nativeUI) newPost() {
 	if strings.TrimSpace(ui.title.Text) == "" {
-		ui.setStatus("请填写新文章标题")
 		return
 	}
 	section := strings.TrimSpace(ui.section.Text)
@@ -367,7 +354,6 @@ func (ui *nativeUI) newPost() {
 	}
 	ui.refresh()
 	ui.openPost("content/" + filepath.ToSlash(rel))
-	ui.setStatus("已创建：%s", rel)
 }
 
 func (ui *nativeUI) deletePost() {
@@ -388,7 +374,6 @@ func (ui *nativeUI) deletePost() {
 		}
 		ui.current = ""
 		ui.refresh()
-		ui.setStatus("文章已删除")
 	}, ui.win)
 }
 
@@ -457,7 +442,6 @@ func (ui *nativeUI) saveSettings() {
 	ui.a.saveCfg()
 	ui.a.probe()
 	ui.refresh()
-	ui.setStatus("设置已保存")
 }
 
 func validateSiteDir(dir string) error {
@@ -475,7 +459,6 @@ func (ui *nativeUI) detectHugo() {
 		return
 	}
 	ui.bin.SetText(bin)
-	ui.setStatus("检测到：%s", probeVersion(bin))
 }
 
 func (ui *nativeUI) build() fyne.CanvasObject {
@@ -516,7 +499,6 @@ func (ui *nativeUI) startServer() {
 		ui.showError(err)
 		return
 	}
-	ui.setStatus("预览服务器已启动，端口 %d", ui.a.cfgSnapshot().ServerPort)
 	ui.loadLogs()
 }
 func (ui *nativeUI) buildSite() {
@@ -526,7 +508,6 @@ func (ui *nativeUI) buildSite() {
 			if err != nil {
 				ui.showError(err)
 			} else {
-				ui.setStatus("构建完成")
 			}
 			ui.loadLogs()
 		})
