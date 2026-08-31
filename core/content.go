@@ -718,15 +718,17 @@ func listPostsIn(siteDir, rootRel string, allRoots []string) []Post {
 }
 
 func sortPosts(posts []Post) {
-	sort.Slice(posts, func(i, j int) bool {
+	sort.SliceStable(posts, func(i, j int) bool {
 		di, dj := posts[i].Date, posts[j].Date
-		if di == "" {
-			return false
+		ti, okI := parseFMDate(di)
+		tj, okJ := parseFMDate(dj)
+		if okI && okJ {
+			return ti.After(tj) // 比较实际瞬间，正确处理不同时区偏移
 		}
-		if dj == "" {
-			return true
+		if okI != okJ {
+			return okI // 合法日期排在空值/不可解析值前
 		}
-		return di > dj // 日期倒序，最新在前
+		return di > dj // 两者均不可解析时保持可预测的字符串兜底
 	})
 }
 

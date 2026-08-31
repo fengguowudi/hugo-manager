@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-const fixitCoreTotal = 62
+const fixitCoreTotal = 63
 
 type scoreKeeper struct {
 	t     *testing.T
@@ -186,6 +186,23 @@ func TestFixItScore(t *testing.T) {
 		}
 	}
 	s.ck("list.multiLangYAML", DefaultContentDir(yamlSite) == "content/zh-cn" && yamlFound["中文 YAML"] && yamlFound["English YAML"])
+
+	// 列表按实际时间倒序，而不是 RFC3339 字符串字典序（不同时区会相反）
+	sortSite := t.TempDir()
+	sortDir := filepath.Join(sortSite, "content", "posts")
+	if err := os.MkdirAll(sortDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeSortPost := func(name, title, date string) {
+		raw := "---\ntitle: \"" + title + "\"\ndate: " + date + "\n---\n\nbody\n"
+		if err := os.WriteFile(filepath.Join(sortDir, name), []byte(raw), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeSortPost("lexical-new.md", "Lexical New", "2024-01-01T00:30:00+08:00")
+	writeSortPost("instant-new.md", "Instant New", "2023-12-31T20:00:00+00:00")
+	sortedPosts, sortErr := ListPosts(sortSite)
+	s.ck("list.timezoneChronology", sortErr == nil && len(sortedPosts) == 2 && sortedPosts[0].Title == "Instant New" && sortedPosts[1].Title == "Lexical New")
 
 	yamlApp := NewApp(filepath.Join(t.TempDir(), "config.json"))
 	yamlApp.SetConfig(Config{SiteDir: yamlSite, HugoBin: hugoBin})
