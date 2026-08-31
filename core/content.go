@@ -341,12 +341,22 @@ func delLine(lines []string, key string) []string {
 	return lines
 }
 
-// ListPosts 扫描 content/ 下全部 Markdown 文件（跳过隐藏目录）。
+// ListPosts 扫描各语言内容目录（ContentRoots）下全部 Markdown 文件（跳过隐藏目录）。
 func ListPosts(siteDir string) ([]Post, error) {
-	root := filepath.Join(siteDir, "content")
+	var posts []Post
+	for _, rootRel := range ContentRoots(siteDir) {
+		posts = append(posts, listPostsIn(siteDir, rootRel)...)
+	}
+	sortPosts(posts)
+	return posts, nil
+}
+
+// listPostsIn 扫描单个内容根；Section 取相对于该内容根的第一级目录。
+func listPostsIn(siteDir, rootRel string) []Post {
+	root := filepath.Join(siteDir, filepath.FromSlash(rootRel))
 	var posts []Post
 	if _, err := os.Stat(root); err != nil {
-		return posts, nil // 无 content 目录 → 空列表
+		return posts // 无此内容目录 → 空列表
 	}
 	_ = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -377,9 +387,11 @@ func ListPosts(siteDir string) ([]Post, error) {
 			Scheduled: scheduled(fields["publishDate"]),
 			Date:      fields["date"],
 		}
-		parts := strings.Split(rel, "/")
-		if len(parts) > 2 {
-			post.Section = parts[1]
+		if sub := strings.TrimPrefix(rel, rootRel+"/"); sub != rel {
+			parts := strings.Split(sub, "/")
+			if len(parts) > 1 {
+				post.Section = parts[0]
+			}
 		}
 		switch name {
 		case "_index.md":
@@ -390,6 +402,10 @@ func ListPosts(siteDir string) ([]Post, error) {
 		posts = append(posts, post)
 		return nil
 	})
+	return posts
+}
+
+func sortPosts(posts []Post) {
 	sort.Slice(posts, func(i, j int) bool {
 		di, dj := posts[i].Date, posts[j].Date
 		if di == "" {
@@ -400,7 +416,6 @@ func ListPosts(siteDir string) ([]Post, error) {
 		}
 		return di > dj // 日期倒序，最新在前
 	})
-	return posts, nil
 }
 
 // SiteInfo 从站点配置文件（hugo.toml/config.toml/...）尽力读出标题与 baseURL。

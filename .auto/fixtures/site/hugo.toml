@@ -16,3 +16,10 @@ _merge = "shallow"
 
 [params]
 version = "1.0.X"
+
+[languages.zh-cn]
+label = "简体中文"
+
+[languages.en]
+label = "English"
+contentDir = "content/en"

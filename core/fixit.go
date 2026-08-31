@@ -125,6 +125,83 @@ func semverLess(a, b string) bool {
 	return len(pa) < len(pb)
 }
 
+// ---- 多语言站点（languages.*.contentDir）----
+// ponytail: 只解析 TOML 配置的首个配置文件；YAML 配置或 config/ 目录拆分的站点需要时再加。
+
+var reDefaultLang = regexp.MustCompile(`(?m)^\s*defaultContentLanguage\s*=\s*"([^"]+)"`)
+var reContentDirKV = regexp.MustCompile(`(?m)^\s*contentDir\s*=\s*"([^"]+)"`)
+
+func readSiteConfig(siteDir string) string {
+	for _, n := range []string{"hugo.toml", "config.toml", "hugo.yaml", "hugo.yml", "config.yaml", "config.yml"} {
+		if b, err := os.ReadFile(filepath.Join(siteDir, n)); err == nil {
+			return string(b)
+		}
+	}
+	return ""
+}
+
+// tomlSection 返回 TOML 顶级 section 的正文；避免依赖 RE2 不支持的 lookahead。
+func tomlSection(s, name string) string {
+	target := "[" + name + "]"
+	lines := strings.Split(s, "\n")
+	active := false
+	var body strings.Builder
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(strings.TrimRight(line, "\r"))
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			active = trimmed == target
+			continue
+		}
+		if active {
+			body.WriteString(line)
+			body.WriteByte('\n')
+		}
+	}
+	return body.String()
+}
+
+// DefaultContentDir 返回默认语言的内容目录（单语言站点为 "content"）。
+func DefaultContentDir(siteDir string) string {
+	s := readSiteConfig(siteDir)
+	m := reDefaultLang.FindStringSubmatch(s)
+	if m == nil {
+		return "content"
+	}
+	if body := tomlSection(s, "languages."+m[1]); body != "" {
+		if cm := reContentDirKV.FindStringSubmatch(body); cm != nil {
+			return strings.Trim(cm[1], "/")
+		}
+	}
+	return "content"
+}
+
+// ContentRoots 返回所有需扫描的内容目录：默认语言目录 + 各语言自定义 contentDir（去重）。
+func ContentRoots(siteDir string) []string {
+	seen := map[string]bool{}
+	var roots []string
+	add := func(d string) {
+		d = strings.Trim(d, "/")
+		if d != "" && !seen[d] {
+			seen[d] = true
+			roots = append(roots, d)
+		}
+	}
+	add(DefaultContentDir(siteDir))
+	s := readSiteConfig(siteDir)
+	for _, line := range strings.Split(s, "\n") {
+		trimmed := strings.TrimSpace(strings.TrimRight(line, "\r"))
+		if strings.HasPrefix(trimmed, "[languages.") && strings.HasSuffix(trimmed, "]") {
+			section := strings.TrimSuffix(strings.TrimPrefix(trimmed, "["), "]")
+			if body := tomlSection(s, section); body != "" {
+				if cm := reContentDirKV.FindStringSubmatch(body); cm != nil {
+					add(cm[1])
+				}
+			}
+		}
+	}
+	return roots
+}
+
 // ThemeSchema 返回该主题推荐的可编辑字段；任何主题都至少有通用字段，
 // FixIt 追加其专有字段（snake_case）。
 func ThemeSchema(theme string) []Field {

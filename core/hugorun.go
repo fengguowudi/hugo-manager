@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -158,7 +159,7 @@ func (a *App) NewContent(rel, kind, title string) error {
 		if kind != "" {
 			args = append(args, "-k", kind)
 		}
-		args = append(args, rel)
+		args = append(args, filepath.ToSlash(filepath.Join(DefaultContentDir(cfg.SiteDir), rel)))
 		cmd := exec.Command(bin, args...)
 		cmd.Dir = cfg.SiteDir
 		out, err := cmd.CombinedOutput()
@@ -180,8 +181,8 @@ func CreateFallbackPost(siteDir, rel, title string) error {
 		title = strings.TrimSuffix(rel, ".md")
 		title = strings.NewReplacer("-", " ", "_", " ").Replace(title)
 	}
-	p := siteDir + string(os.PathSeparator) + "content" + string(os.PathSeparator) +
-		strings.ReplaceAll(rel, "/", string(os.PathSeparator))
+	contentDir := filepath.FromSlash(DefaultContentDir(siteDir))
+	p := filepath.Join(siteDir, contentDir, filepath.FromSlash(rel))
 	if err := os.MkdirAll(dirOf(p), 0o755); err != nil {
 		return err
 	}

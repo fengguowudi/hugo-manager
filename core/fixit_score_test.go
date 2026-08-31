@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-const fixitCoreTotal = 45
+const fixitCoreTotal = 46
 
 type scoreKeeper struct {
 	t     *testing.T
@@ -137,6 +137,16 @@ func TestFixItScore(t *testing.T) {
 	s.ck("friends.addValidate", !baddies && okAdd && len(friends2) == 3 && friends2[2].Nickname == "新友链")
 
 	s.ck("state.friendsCount", a.BuildState()["countFriends"] == 2)
+
+	// ---- 多语言站点（languages.*.contentDir，FixIt 是 i18n 重度主题）----
+	allPosts, _ := ListPosts(site)
+	foundEN := false
+	for _, p := range allPosts {
+		if p.Title == "English Post" && p.Section == "posts" { // content/en 下的文章应归入 posts 板块而非 "en"
+			foundEN = true
+		}
+	}
+	s.ck("list.multiLang", foundEN)
 
 	// ---- 解析 ----
 	helloRel := filepath.Join("content", "posts", "hello-fixit.md")
