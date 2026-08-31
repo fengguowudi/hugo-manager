@@ -34,6 +34,7 @@ type nativeUI struct {
 	list                               *widget.List
 	editor                             *fyne.Container
 	current                            string
+	currentSite                        string
 	dirty                              bool
 	hint                               *widget.Label
 	search                             *widget.Entry
@@ -125,8 +126,46 @@ func iosCard(title string, objects ...fyne.CanvasObject) fyne.CanvasObject {
 	return container.NewStack(bg, container.NewPadded(container.NewVBox(rows...)))
 }
 
+func normalizedSiteDir(dir string) string {
+	if strings.TrimSpace(dir) == "" {
+		return ""
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return filepath.Clean(dir)
+	}
+	return filepath.Clean(abs)
+}
+
+func (ui *nativeUI) clearPostEditor() {
+	ui.current = ""
+	ui.currentSite = ""
+	for _, entry := range []*widget.Entry{ui.postTitle, ui.postDate, ui.postSlug, ui.postTags, ui.postCategories, ui.postDescription, ui.postBody} {
+		if entry != nil {
+			entry.SetText("")
+		}
+	}
+	if ui.postDraft != nil {
+		ui.postDraft.SetChecked(false)
+	}
+	ui.extraWidgets = nil
+	ui.presentKeys = nil
+	if ui.extraBox != nil {
+		ui.extraBox.Objects = nil
+		ui.extraBox.Refresh()
+	}
+	ui.theme = ""
+	ui.dirty = false
+	if ui.hint != nil {
+		ui.hint.SetText("选择左侧文章开始编辑")
+	}
+}
+
 func (ui *nativeUI) refresh() {
 	cfg := ui.a.ConfigSnapshot()
+	if ui.current != "" && ui.currentSite != normalizedSiteDir(cfg.SiteDir) {
+		ui.clearPostEditor()
+	}
 	ui.theme = "" // 站点可能已换，强制重建额外表单
 	if cfg.SiteDir == "" {
 		if ui.siteLabel != nil {
@@ -321,6 +360,9 @@ func (ui *nativeUI) makeEditor() *fyne.Container {
 	return container.NewBorder(iosHeader("编辑器", deleteBtn, save), statusLine, nil, nil, split)
 }
 func (ui *nativeUI) openPost(path string) {
+	if ui.current != "" && ui.currentSite != normalizedSiteDir(ui.a.ConfigSnapshot().SiteDir) {
+		ui.clearPostEditor()
+	}
 	if ui.dirty && ui.current == path {
 		return // 重选当前文章不应从磁盘重载并静默丢失未保存内容
 	}
@@ -348,6 +390,7 @@ func (ui *nativeUI) openPost(path string) {
 		return
 	}
 	ui.current = path
+	ui.currentSite = normalizedSiteDir(ui.a.ConfigSnapshot().SiteDir)
 	ui.postTitle.SetText(fields["title"])
 	ui.postDate.SetText(fields["date"])
 	ui.postSlug.SetText(fields["slug"])
@@ -363,6 +406,10 @@ func (ui *nativeUI) openPost(path string) {
 
 func (ui *nativeUI) savePost() {
 	if ui.current == "" {
+		return
+	}
+	if ui.currentSite != normalizedSiteDir(ui.a.ConfigSnapshot().SiteDir) {
+		ui.clearPostEditor() // 站点已切换：旧编辑绑定作废，防止把 A 站内容写进 B 站
 		return
 	}
 	p, err := ui.a.SafeSitePath(ui.current)
@@ -415,6 +462,10 @@ func (ui *nativeUI) newPost() {
 
 func (ui *nativeUI) deletePost() {
 	if ui.current == "" {
+		return
+	}
+	if ui.currentSite != normalizedSiteDir(ui.a.ConfigSnapshot().SiteDir) {
+		ui.clearPostEditor() // 与 savePost 同源：站点已切换，防止删除 B 站同路径文章
 		return
 	}
 	dialog.ShowConfirm("删除文章", "此操作不可恢复，确定继续？", func(ok bool) {

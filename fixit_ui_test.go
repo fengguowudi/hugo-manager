@@ -1,7 +1,7 @@
 package main
 
 // FixIt 主题 UI 层适配基准：编辑器按 ThemeSchema 渲染主题专有字段，
-// 并能无损往返（填入 → 收集）。输出 METRIC fixit_ui=N（共 15 分）。
+// 并能无损往返（填入 → 收集）。输出 METRIC fixit_ui=N（共 16 分）。
 
 import (
 	"fmt"
@@ -193,6 +193,35 @@ func TestFixItUI(t *testing.T) {
 		_, repeatFields, _, _, _, parseErr := core.ParsePost(filepath.Join(repeatSite, filepath.FromSlash(repeatRel)))
 		ck("ui.extraFieldSecondSave", parseErr == nil && repeatFields["subtitle"] == "SECOND SAVE")
 	}
+
+	// u14: 切换站点必须解绑旧编辑器，不能把站点 A 的未保存内容写到站点 B 同路径文章
+	switchRoot := t.TempDir()
+	switchRel := filepath.ToSlash(filepath.Join("content", "posts", "same.md"))
+	makeSwitchSite := func(name, title, body string) (string, string) {
+		dir := filepath.Join(switchRoot, name)
+		postPath := filepath.Join(dir, filepath.FromSlash(switchRel))
+		if err := os.MkdirAll(filepath.Dir(postPath), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		raw := "---\ntitle: " + title + "\ndate: 2024-01-01T00:00:00Z\n---\n\n" + body + "\n"
+		if err := os.WriteFile(postPath, []byte(raw), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return dir, raw
+	}
+	siteA, _ := makeSwitchSite("site-a", "Site A", "BODY A")
+	siteB, siteBRaw := makeSwitchSite("site-b", "Site B", "BODY B")
+	switchApp := core.NewApp(filepath.Join(t.TempDir(), "config.json"))
+	switchApp.SetConfig(core.Config{SiteDir: siteA})
+	switchUI := &nativeUI{a: switchApp}
+	switchUI.makeEditor()
+	switchUI.openPost(switchRel)
+	switchUI.postBody.SetText("UNSAVED FROM SITE A")
+	switchApp.SetConfig(core.Config{SiteDir: siteB})
+	switchUI.refresh()
+	switchUI.savePost()
+	siteBAfter, siteBErr := os.ReadFile(filepath.Join(siteB, filepath.FromSlash(switchRel)))
+	ck("ui.siteSwitchClearsEditor", siteBErr == nil && string(siteBAfter) == siteBRaw && switchUI.current == "" && !switchUI.dirty)
 	fmt.Printf("METRIC fixit_ui=%d\n", score)
 }
 
