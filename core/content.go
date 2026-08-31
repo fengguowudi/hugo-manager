@@ -69,12 +69,22 @@ func ParsePost(p string) (fmFmt string, fields map[string]string, arrays map[str
 	if fmFmt == "toml" {
 		re = reTomlKV
 	}
-	for _, ln := range lines[1:end] {
-		m := re.FindStringSubmatch(ln)
+	for i := 1; i < end; i++ {
+		m := re.FindStringSubmatch(lines[i])
 		if m == nil {
 			continue
 		}
 		k, v := m[1], strings.TrimSpace(m[2])
+		if strings.HasPrefix(v, "[") && !strings.HasSuffix(v, "]") {
+			// 多行行内数组（TOML 常见）：累积到 ] 闭合
+			for i+1 < end {
+				i++
+				v += strings.TrimSpace(strings.TrimRight(lines[i], "\r"))
+				if strings.HasSuffix(v, "]") {
+					break
+				}
+			}
+		}
 		if strings.HasPrefix(v, "[") && strings.HasSuffix(v, "]") {
 			arrays[k] = splitList(v[1 : len(v)-1])
 			continue
@@ -225,13 +235,41 @@ var reBare = regexp.MustCompile(`^(true|false|-?[0-9]+(\.[0-9]+)?|[0-9]{4}-[0-9]
 func bareValue(v string) bool { return reBare.MatchString(strings.TrimSpace(v)) }
 
 // blockEnd 返回 key 行所属块的结束下标（不含）：
-// 其后所有缩进行（块式列表项 / 嵌套 map）都属于这个键。
+// 其后所有缩进行（块式列表项 / 嵌套 map）都属于这个键；
+// 若键行以 [ 开头且方括号未闭合（多行行内数组），继续吞到闭合——TOML 允许 ] 顶格。
 func blockEnd(lines []string, i int) int {
 	j := i + 1
 	for j < len(lines) && (strings.HasPrefix(lines[j], " ") || strings.HasPrefix(lines[j], "\t")) {
 		j++
 	}
+	kv := strings.IndexAny(lines[i], ":=")
+	if kv < 0 || !strings.HasPrefix(strings.TrimSpace(lines[i][kv+1:]), "[") {
+		return j
+	}
+	depth := 0
+	for k := i; k < j; k++ {
+		depth += bracketDepth(lines[k])
+	}
+	for j < len(lines) && depth > 0 {
+		depth += bracketDepth(lines[j])
+		j++
+	}
 	return j
+}
+
+// bracketDepth 统计行内 [ 与 ] 的净差。
+// ponytail: 不处理字符串字面量内的括号（front matter 标签里出现 [ ] 极罕见）；需要时换正经解析器。
+func bracketDepth(s string) int {
+	d := 0
+	for _, r := range s {
+		switch r {
+		case '[':
+			d++
+		case ']':
+			d--
+		}
+	}
+	return d
 }
 
 // setLine 替换 key 所在行（连同其块式内容）；不存在则追加到 front matter 末尾。

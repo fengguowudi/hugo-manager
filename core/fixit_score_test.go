@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-const fixitCoreTotal = 30
+const fixitCoreTotal = 32
 
 type scoreKeeper struct {
 	t     *testing.T
@@ -219,6 +219,31 @@ func TestFixItScore(t *testing.T) {
 	got = readFile(t, p)
 	s.ck("toml.saveScalar", strings.Contains(got, `subtitle = "新副标"`) && strings.Contains(got, "weight = 8\n") && strings.Contains(got, "date = 2024-02-01T09:00:00+08:00"))
 	s.ck("toml.keepTable", strings.Contains(got, "[repost]\nenable = false\nurl = \"\""))
+
+	// ---- TOML 多行行内数组 ----
+	mlRel := filepath.Join("content", "posts", "toml-multiline.md")
+	_, _, ma, _, _, err := ParsePost(filepath.Join(site, mlRel))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.ck("toml.parseMultiLineArray", strings.Join(ma["tags"], ",") == "长标签甲,长标签乙")
+
+	p = copyPost(t, site, mlRel)
+	if err := SavePost(p, nil, map[string][]string{"tags": {"新标签"}}, "正文。\n"); err != nil {
+		t.Fatal(err)
+	}
+	got = readFile(t, p)
+	noOrphan := true
+	for _, ln := range strings.Split(got, "\n") {
+		if strings.TrimSpace(ln) == "]" { // 孤立的 ] = 旧数组没删干净
+			noOrphan = false
+		}
+	}
+	_, _, ma2, _, _, err := ParsePost(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.ck("toml.saveMultiLineArray", noOrphan && strings.Contains(got, `tags = ["新标签"]`) && strings.Join(ma2["tags"], ",") == "新标签")
 	// ---- 编码健壮性（SavePost 声称兼容 CRLF / BOM，做回归守卫）----
 	crlf := strings.ReplaceAll(readFile(t, filepath.Join(site, helloRel)), "\n", "\r\n")
 	p2 := filepath.Join(t.TempDir(), "crlf.md")
