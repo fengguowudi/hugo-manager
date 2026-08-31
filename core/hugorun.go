@@ -168,6 +168,7 @@ func (a *App) NewContent(rel, kind, title string) error {
 }
 
 // CreateFallbackPost 无 hugo 二进制时的兜底：content/<rel> 写最简模板。
+// 识别到主题（如 FixIt）时套用该主题的字段布局。
 func CreateFallbackPost(siteDir, rel, title string) error {
 	if title == "" {
 		title = strings.TrimSuffix(rel, ".md")
@@ -178,9 +179,19 @@ func CreateFallbackPost(siteDir, rel, title string) error {
 	if err := os.MkdirAll(dirOf(p), 0o755); err != nil {
 		return err
 	}
-	tmpl := fmt.Sprintf("---\ntitle: %q\ndate: %s\ndraft: true\n---\n\n",
-		title, time.Now().Format("2006-01-02T15:04:05-07:00"))
-	return os.WriteFile(p, []byte(tmpl), 0o644)
+	var b strings.Builder
+	b.WriteString("---\n")
+	fmt.Fprintf(&b, "title: %q\n", title)
+	fixit := DetectTheme(siteDir) == "FixIt"
+	if fixit { // 参照 FixIt archetypes/posts.md 的字段布局
+		b.WriteString("subtitle: \n")
+	}
+	fmt.Fprintf(&b, "date: %s\ndraft: true\n", time.Now().Format("2006-01-02T15:04:05-07:00"))
+	if fixit {
+		b.WriteString("description: \nkeywords: []\nweight: 0\ntags: []\ncategories: []\ncollections: []\nfeatured_image: \nfeatured_image_preview: \n")
+	}
+	b.WriteString("---\n\n")
+	return os.WriteFile(p, []byte(b.String()), 0o644)
 }
 
 func dirOf(p string) string {
