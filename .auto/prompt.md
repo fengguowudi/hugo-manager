@@ -10,10 +10,10 @@
 
 ## Metrics
 
-- **Primary**: `fixit_score`（无单位，越高越好，满分 18）— `core/fixit_score_test.go` 中
+- **Primary**: `fixit_score`（无单位，越高越好，满分 20）— `core/fixit_score_test.go` 中
   TestFixItScore 的行为级检查通过数。检查项见测试源码注释：site.title / site.baseURL /
   site.detectTheme / parse.* / save.* / schema.fixit / fallback.fixitFields / e2e.*。
-- **Secondary**: `fixit_total`（恒为 18，仅校验口径不变）。
+- **Secondary**: `fixit_total`（恒为 20，仅校验口径不变）。
 
 ## How to Run
 

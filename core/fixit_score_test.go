@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-const fixitTotal = 18
+const fixitTotal = 20
 
 type scoreKeeper struct {
 	t     *testing.T

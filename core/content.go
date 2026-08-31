@@ -157,24 +157,21 @@ func SavePost(p string, fields map[string]string, arrays map[string][]string, bo
 	for _, ln := range lines[1:end] {
 		fm = append(fm, strings.TrimRight(ln, "\r")) // 行尾 \r 归一，之后统一按 eol 重组
 	}
-	// 标量字段：draft/date 裸写（布尔 / TOML 日期时间合法），其余加引号
-	for _, k := range []string{"title", "date", "draft", "slug", "description", "summary"} {
-		v, ok := fields[k]
-		if !ok || v == "" {
+	// 标量字段：布尔 / 数字 / 日期时间裸写，其余加引号；空值 = 不动该字段
+	for _, k := range sortedKeys(fields) {
+		v := fields[k]
+		if v == "" {
 			continue
 		}
 		val := quote(v)
-		if k == "draft" || k == "date" {
+		if bareValue(v) {
 			val = v
 		}
 		fm = setLine(fm, k, lineFor(k, val))
 	}
-	// 数组字段：空数组 = 删除该行
-	for _, k := range []string{"tags", "categories"} {
-		v, ok := arrays[k]
-		if !ok {
-			continue
-		}
+	// 数组字段：空数组 = 删除该字段（含块式列表的残留行）
+	for _, k := range sortedKeys(arrays) {
+		v := arrays[k]
 		if len(v) == 0 {
 			fm = delLine(fm, k)
 			continue
@@ -210,27 +207,51 @@ func keyLineRe(key string) *regexp.Regexp {
 	return regexp.MustCompile(`^` + regexp.QuoteMeta(key) + `\s*[:=]`)
 }
 
-// setLine 替换 key 所在行；不存在则追加到 front matter 末尾。
+// sortedKeys 返回 map 键的排序副本，保证写回顺序稳定。
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// bareValue 判断标量是否可裸写（不加引号）：布尔、数字、日期时间。
+var reBare = regexp.MustCompile(`^(true|false|-?[0-9]+(\.[0-9]+)?|[0-9]{4}-[0-9]{2}-[0-9]{2}([T ][0-9]{2}:[0-9]{2}.*)?)$`)
+
+func bareValue(v string) bool { return reBare.MatchString(strings.TrimSpace(v)) }
+
+// blockEnd 返回 key 行所属块的结束下标（不含）：
+// 其后所有缩进行（块式列表项 / 嵌套 map）都属于这个键。
+func blockEnd(lines []string, i int) int {
+	j := i + 1
+	for j < len(lines) && (strings.HasPrefix(lines[j], " ") || strings.HasPrefix(lines[j], "\t")) {
+		j++
+	}
+	return j
+}
+
+// setLine 替换 key 所在行（连同其块式内容）；不存在则追加到 front matter 末尾。
 func setLine(lines []string, key, line string) []string {
 	re := keyLineRe(key)
 	for i, ln := range lines {
 		if re.MatchString(ln) {
-			lines[i] = line
-			return lines
+			return append(lines[:i], append([]string{line}, lines[blockEnd(lines, i):]...)...)
 		}
 	}
 	return append(lines, line)
 }
 
+// delLine 删除 key 所在行及其块式内容。
 func delLine(lines []string, key string) []string {
 	re := keyLineRe(key)
-	out := lines[:0]
-	for _, ln := range lines {
-		if !re.MatchString(ln) {
-			out = append(out, ln)
+	for i, ln := range lines {
+		if re.MatchString(ln) {
+			return append(lines[:i], lines[blockEnd(lines, i):]...)
 		}
 	}
-	return out
+	return lines
 }
 
 // ListPosts 扫描 content/ 下全部 Markdown 文件（跳过隐藏目录）。
