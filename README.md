@@ -43,3 +43,12 @@ go build -o hugo-manager .                              # macOS（建议在 macO
 - front matter 仅支持 YAML(`---`) 与 TOML(`+++`) 的常用字段结构化编辑；JSON front matter 只读展示
 - 标签/分类以行内数组写回（块式列表会被转为行内）
 - 编辑动作限定在站点目录内（服务端做路径穿越校验）
+
+## FixIt 主题适配
+
+识别到站点使用 [FixIt](https://github.com/hugo-fixit/FixIt) 主题时（hugo.toml 的 `theme`、go.mod 模块或 themes/ 目录）：
+
+- **概览**页显示主题名
+- **编辑器**自动追加 FixIt 专有 front matter 字段：副标题、置顶权重、头图、列表预览图、合集、关键词、小结、首页隐藏、相关文章隐藏、访问密码、密码提示语
+- **新建文章**的兜底模板（无 hugo 二进制时）套用 FixIt 原型字段
+- 写回保持外科手术式：未编辑字段（含 `repost` 嵌套表、块式列表）逐字节保留；布尔/数字/日期裸写，CRLF/BOM 保持

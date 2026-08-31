@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-const fixitCoreTotal = 25
+const fixitCoreTotal = 27
 
 type scoreKeeper struct {
 	t     *testing.T
@@ -203,6 +203,28 @@ func TestFixItScore(t *testing.T) {
 	got = readFile(t, p)
 	s.ck("toml.saveScalar", strings.Contains(got, `subtitle = "新副标"`) && strings.Contains(got, "weight = 8\n") && strings.Contains(got, "date = 2024-02-01T09:00:00+08:00"))
 	s.ck("toml.keepTable", strings.Contains(got, "[repost]\nenable = false\nurl = \"\""))
+	// ---- 编码健壮性（SavePost 声称兼容 CRLF / BOM，做回归守卫）----
+	crlf := strings.ReplaceAll(readFile(t, filepath.Join(site, helloRel)), "\n", "\r\n")
+	p2 := filepath.Join(t.TempDir(), "crlf.md")
+	if err := os.WriteFile(p2, []byte(crlf), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := SavePost(p2, map[string]string{"subtitle": "CRLF 副标题"}, nil, "CRLF 正文。"); err != nil {
+		t.Fatal(err)
+	}
+	got = readFile(t, p2)
+	s.ck("save.crlf", strings.Contains(got, "subtitle: \"CRLF 副标题\"\r\n") && !strings.Contains(got, "\r\r"))
+
+	bom := "\uFEFF" + readFile(t, filepath.Join(site, helloRel))
+	p2 = filepath.Join(t.TempDir(), "bom.md")
+	if err := os.WriteFile(p2, []byte(bom), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := SavePost(p2, map[string]string{"subtitle": "BOM 副标题"}, nil, "BOM 正文。"); err != nil {
+		t.Fatal(err)
+	}
+	s.ck("save.bom", strings.HasPrefix(readFile(t, p2), "\uFEFF---"))
+
 	// ---- hugo new 原型（FixIt 站点应默认用 posts 原型）----
 	newSite := copySite(t, site)
 	if out, err := exec.Command("cmd", "/c", "mklink", "/J",
