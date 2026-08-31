@@ -155,16 +155,30 @@ func (a *App) NewContent(rel, kind, title string) error {
 	}
 	bin, err := a.resolveHugo(cfg)
 	if err == nil {
+		contentRel := ContentRelPath(cfg.SiteDir, rel)
 		args := []string{"new"}
 		if kind != "" {
 			args = append(args, "-k", kind)
 		}
-		args = append(args, ContentRelPath(cfg.SiteDir, rel))
+		args = append(args, contentRel)
 		cmd := exec.Command(bin, args...)
 		cmd.Dir = cfg.SiteDir
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("hugo new 失败: %s", strings.TrimSpace(string(out)))
+		}
+		if title != "" {
+			p := filepath.Join(cfg.SiteDir, filepath.FromSlash(contentRel))
+			fmFmt, _, _, body, _, err := ParsePost(p)
+			if err != nil {
+				return fmt.Errorf("读取新文章失败: %w", err)
+			}
+			if fmFmt == "" {
+				return errors.New("hugo new 生成的文章缺少可识别的 front matter")
+			}
+			if err := SavePost(p, map[string]string{"title": title}, nil, body); err != nil {
+				return fmt.Errorf("写入新文章标题失败: %w", err)
+			}
 		}
 		return nil
 	}

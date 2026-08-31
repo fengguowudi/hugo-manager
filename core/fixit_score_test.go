@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-const fixitCoreTotal = 56
+const fixitCoreTotal = 57
 
 type scoreKeeper struct {
 	t     *testing.T
@@ -509,15 +509,19 @@ func TestFixItScore(t *testing.T) {
 		filepath.Join(newSite, "themes"), themesDir).CombinedOutput(); err != nil {
 		t.Logf("mklink: %v %s", err, out)
 		s.ck("newcontent.fixitKind", false)
+		s.ck("newcontent.title", false)
 	} else {
 		a2 := NewApp(filepath.Join(t.TempDir(), "config.json"))
 		a2.SetConfig(Config{SiteDir: newSite, HugoBin: hugoBin})
 		if err := a2.NewContent("posts/kind-check.md", "", "原型检查"); err != nil {
 			t.Logf("NewContent: %v", err)
 			s.ck("newcontent.fixitKind", false)
+			s.ck("newcontent.title", false)
 		} else {
 			nc := readFile(t, filepath.Join(newSite, "content", "posts", "kind-check.md"))
 			s.ck("newcontent.fixitKind", strings.Contains(nc, "featured_image:"))
+			_, newFields, _, _, _, parseErr := ParsePost(filepath.Join(newSite, "content", "posts", "kind-check.md"))
+			s.ck("newcontent.title", parseErr == nil && newFields["title"] == "原型检查")
 		}
 	}
 
