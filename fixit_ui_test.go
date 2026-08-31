@@ -1,13 +1,15 @@
 package main
 
 // FixIt 主题 UI 层适配基准：编辑器按 ThemeSchema 渲染主题专有字段，
-// 并能无损往返（填入 → 收集）。输出 METRIC fixit_ui=N（共 3 分）。
+// 并能无损往返（填入 → 收集）。输出 METRIC fixit_ui=N（共 4 分）。
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/widget"
 
 	"hugo-manager/core"
@@ -70,5 +72,26 @@ func TestFixItUI(t *testing.T) {
 				widgets["collections"].(*widget.Entry).Text == "回显")
 	}
 
+	// u4: 概览页显示站点主题名
+	site := filepath.Join(".auto", "fixtures", "site")
+	a := core.NewApp(filepath.Join(t.TempDir(), "config.json"))
+	a.SetConfig(core.Config{SiteDir: site})
+	ui := &nativeUI{a: a}
+	var texts strings.Builder
+	collectTexts(ui.overview(), &texts)
+	ck("ui.overviewTheme", strings.Contains(texts.String(), "FixIt"))
 	fmt.Printf("METRIC fixit_ui=%d\n", score)
+}
+
+// collectTexts 递归收集控件树中所有 Label 文本。
+func collectTexts(o fyne.CanvasObject, sb *strings.Builder) {
+	switch o := o.(type) {
+	case *widget.Label:
+		sb.WriteString(o.Text)
+		sb.WriteByte('\n')
+	case *fyne.Container:
+		for _, c := range o.Objects {
+			collectTexts(c, sb)
+		}
+	}
 }

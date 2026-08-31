@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-const fixitCoreTotal = 21
+const fixitCoreTotal = 24
 
 type scoreKeeper struct {
 	t     *testing.T
@@ -186,6 +186,23 @@ func TestFixItScore(t *testing.T) {
 	fb := readFile(t, filepath.Join(tmpSite, "content", "posts", "fallback-check.md"))
 	s.ck("fallback.fixitFields", strings.Contains(fb, "subtitle:") && strings.Contains(fb, "featured_image:"))
 
+
+	// ---- TOML front matter（FixIt 同样支持）----
+	tomlRel := filepath.Join("content", "posts", "toml-post.md")
+	fmt2, tf, ta, _, _, err := ParsePost(filepath.Join(site, tomlRel))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.ck("toml.parse", fmt2 == "toml" && tf["subtitle"] == "toml 副标题" && tf["weight"] == "2" && strings.Join(ta["collections"], ",") == "TOML集")
+
+	p = copyPost(t, site, tomlRel)
+	err = SavePost(p, map[string]string{"title": "TOML 改名", "subtitle": "新副标", "weight": "8"}, nil, "TOML 正文。\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = readFile(t, p)
+	s.ck("toml.saveScalar", strings.Contains(got, `subtitle = "新副标"`) && strings.Contains(got, "weight = 8\n") && strings.Contains(got, "date = 2024-02-01T09:00:00+08:00"))
+	s.ck("toml.keepTable", strings.Contains(got, "[repost]\nenable = false\nurl = \"\""))
 	// ---- 端到端：真实主题构建 ----
 	s.ck("e2e.buildPristine", hugoBuild(t, hugoBin, copySite(t, site), themesDir, filepath.Join(t.TempDir(), "public")))
 
