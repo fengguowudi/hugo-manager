@@ -245,8 +245,11 @@ func (ui *nativeUI) makeEditor() *fyne.Container {
 	ui.postTags = widget.NewEntry()
 	ui.postCategories = widget.NewEntry()
 	ui.postDescription = widget.NewMultiLineEntry()
-	ui.postBody = widget.NewMultiLineEntry()
-	ui.postBody.Wrapping = fyne.TextWrapOff
+	body := &mdEntry{ui: ui} // 外层对象必须进布局树，TypedShortcut 才会被调用
+	body.MultiLine = true
+	body.Wrapping = fyne.TextWrapOff
+	body.ExtendBaseWidget(body)
+	ui.postBody = &body.Entry
 	ui.postDraft = widget.NewCheck("草稿", func(bool) { ui.dirty = true })
 	ui.hint = widget.NewLabelWithStyle("选择左侧文章开始编辑 · Ctrl+B 粗体 I 斜体 U 下划线 1~3 标题 K 链接 E 代码 Q 引用 L 列表 T 表格 S 保存", fyne.TextAlignLeading, fyne.TextStyle{Italic: true})
 	markDirty := func(string) { ui.dirty = true }
@@ -268,7 +271,7 @@ func (ui *nativeUI) makeEditor() *fyne.Container {
 	save.Importance = widget.HighImportance
 	deleteBtn := widget.NewButton("删除", func() { ui.deletePost() })
 	deleteBtn.Importance = widget.DangerImportance
-	split := container.NewVSplit(container.NewVScroll(form), ui.postBody)
+	split := container.NewVSplit(container.NewVScroll(form), body)
 	split.Offset = 0.42
 	statusLine := container.NewBorder(widget.NewSeparator(), nil, nil, nil, container.NewPadded(ui.hint))
 	return container.NewBorder(iosHeader("编辑器", deleteBtn, save), statusLine, nil, nil, split)
@@ -521,29 +524,52 @@ func (ui *nativeUI) loadLogs() {
 }
 func (ui *nativeUI) showError(err error) { dialog.ShowError(err, ui.win) }
 
-// bindEditorShortcuts registers Typecho-style Markdown shortcuts on the window canvas.
+// bindEditorShortcuts keeps Ctrl+S working when no entry is focused.
+// 有控件聚焦时 Fyne 只把组合键派发给聚焦控件，正文快捷键由 mdEntry.TypedShortcut 处理。
 func (ui *nativeUI) bindEditorShortcuts() {
-	c := ui.win.Canvas()
-	bind := func(key fyne.KeyName, fn func()) {
-		c.AddShortcut(&desktop.CustomShortcut{KeyName: key, Modifier: fyne.KeyModifierControl}, func(fyne.Shortcut) {
-			if c.Focused() != ui.postBody {
-				return // body-only shortcuts,避免劫持其他输入框
-			}
-			fn()
-		})
+	ui.win.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyS, Modifier: fyne.KeyModifierControl}, func(fyne.Shortcut) { ui.savePost() })
+}
+
+// mdEntry is the post body editor with Typecho-style Markdown shortcuts.
+type mdEntry struct {
+	widget.Entry
+	ui *nativeUI
+}
+
+func (e *mdEntry) TypedShortcut(s fyne.Shortcut) {
+	cs, ok := s.(*desktop.CustomShortcut)
+	if !ok || cs.Modifier != fyne.KeyModifierControl {
+		e.Entry.TypedShortcut(s) // 交还给默认的复制/粘贴/撤销等
+		return
 	}
-	c.AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyS, Modifier: fyne.KeyModifierControl}, func(fyne.Shortcut) { ui.savePost() })
-	bind(fyne.KeyB, func() { mdWrap(ui.postBody, "**", "**", "粗体文本") })
-	bind(fyne.KeyI, func() { mdWrap(ui.postBody, "*", "*", "斜体文本") })
-	bind(fyne.KeyU, func() { mdWrap(ui.postBody, "<u>", "</u>", "下划线文本") })
-	bind(fyne.KeyK, func() { mdWrap(ui.postBody, "[", "](https://)", "链接文本") })
-	bind(fyne.KeyE, func() { mdWrap(ui.postBody, "`", "`", "代码") })
-	bind(fyne.KeyQ, func() { mdLinePrefix(ui.postBody, "> ") })
-	bind(fyne.KeyL, func() { mdLinePrefix(ui.postBody, "- ") })
-	bind(fyne.Key1, func() { mdHeading(ui.postBody, 1) })
-	bind(fyne.Key2, func() { mdHeading(ui.postBody, 2) })
-	bind(fyne.Key3, func() { mdHeading(ui.postBody, 3) })
-	bind(fyne.KeyT, func() { mdInsertBlock(ui.postBody, "\n| 列1 | 列2 | 列3 |\n| --- | --- | --- |\n|  |  |  |\n") })
+	switch cs.KeyName {
+	case fyne.KeyS:
+		e.ui.savePost()
+	case fyne.KeyB:
+		mdWrap(&e.Entry, "**", "**", "粗体文本")
+	case fyne.KeyI:
+		mdWrap(&e.Entry, "*", "*", "斜体文本")
+	case fyne.KeyU:
+		mdWrap(&e.Entry, "<u>", "</u>", "下划线文本")
+	case fyne.KeyK:
+		mdWrap(&e.Entry, "[", "](https://)", "链接文本")
+	case fyne.KeyE:
+		mdWrap(&e.Entry, "`", "`", "代码")
+	case fyne.KeyQ:
+		mdLinePrefix(&e.Entry, "> ")
+	case fyne.KeyL:
+		mdLinePrefix(&e.Entry, "- ")
+	case fyne.KeyT:
+		mdInsertBlock(&e.Entry, "\n| 列1 | 列2 | 列3 |\n| --- | --- | --- |\n|  |  |  |\n")
+	case fyne.Key1:
+		mdHeading(&e.Entry, 1)
+	case fyne.Key2:
+		mdHeading(&e.Entry, 2)
+	case fyne.Key3:
+		mdHeading(&e.Entry, 3)
+	default:
+		e.Entry.TypedShortcut(s)
+	}
 }
 
 // cursorOffset returns the rune offset of the entry cursor.
