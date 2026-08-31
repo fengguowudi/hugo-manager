@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-const fixitCoreTotal = 57
+const fixitCoreTotal = 58
 
 type scoreKeeper struct {
 	t     *testing.T
@@ -481,6 +481,28 @@ func TestFixItScore(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.ck("toml.saveMultiLineArray", noOrphan && strings.Contains(got, `tags = ["新标签"]`) && strings.Join(ma2["tags"], ",") == "新标签")
+
+	// 多行数组字符串内的 [ ] 不参与结构深度，保存后不能留下孤立闭括号
+	bracketPath := filepath.Join(t.TempDir(), "toml-bracket-string.md")
+	bracketRaw := "+++\ntitle = \"Bracket Tags\"\ntags = [\n  \"A]B\",\n  \"C[1]\",\n]\ncategories = [\"notes\"]\n+++\n\nbody\n"
+	if err := os.WriteFile(bracketPath, []byte(bracketRaw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, _, bracketArrays, _, _, err := ParsePost(bracketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SavePost(bracketPath, nil, map[string][]string{"tags": {"new"}}, "updated\n"); err != nil {
+		t.Fatal(err)
+	}
+	bracketSaved := readFile(t, bracketPath)
+	_, _, bracketArrays2, _, _, err := ParsePost(bracketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.ck("toml.saveBracketLiteral", strings.Join(bracketArrays["tags"], "|") == "A]B|C[1]" &&
+		strings.Join(bracketArrays2["tags"], ",") == "new" && strings.Join(bracketArrays2["categories"], ",") == "notes" &&
+		!strings.Contains(bracketSaved, "\n]\n") && !strings.Contains(bracketSaved, `"A]B"`) && !strings.Contains(bracketSaved, `"C[1]"`))
 	// ---- 编码健壮性（SavePost 声称兼容 CRLF / BOM，做回归守卫）----
 	crlf := strings.ReplaceAll(readFile(t, filepath.Join(site, helloRel)), "\n", "\r\n")
 	p2 := filepath.Join(t.TempDir(), "crlf.md")

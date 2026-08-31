@@ -389,12 +389,30 @@ func blockEnd(lines []string, i int) int {
 	return j
 }
 
-// bracketDepth 统计行内 [ 与 ] 的净差。
-// ponytail: 不处理字符串字面量内的括号（front matter 标签里出现 [ ] 极罕见）；需要时换正经解析器。
+// bracketDepth 统计引号外 [ 与 ] 的净差；字符串字面量和 # 注释内括号不参与结构。
 func bracketDepth(s string) int {
 	d := 0
-	for _, r := range s {
-		switch r {
+	var quote byte
+	escaped := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if quote != 0 {
+			if quote == '"' && c == '\\' {
+				escaped = true
+			} else if c == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch c {
+		case '"', '\'':
+			quote = c
+		case '#':
+			return d
 		case '[':
 			d++
 		case ']':
