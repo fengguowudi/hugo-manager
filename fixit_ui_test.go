@@ -1,7 +1,7 @@
 package main
 
 // FixIt 主题 UI 层适配基准：编辑器按 ThemeSchema 渲染主题专有字段，
-// 并能无损往返（填入 → 收集）。输出 METRIC fixit_ui=N（共 11 分）。
+// 并能无损往返（填入 → 收集）。输出 METRIC fixit_ui=N（共 12 分）。
 
 import (
 	"fmt"
@@ -60,6 +60,20 @@ func TestFixItUI(t *testing.T) {
 	_, tocWritten := mf["toc"]
 	toggleOK = toggleOK && mf["math"] == "true" && mf["comment"] == "false" && !tocWritten
 	ck("ui.pageToggles", toggleOK)
+
+	// u1c: Hugo 内建日期字段（lastmod/expiryDate/publishDate）入表单并可往返
+	dateOK := true
+	for _, k := range []string{"lastmod", "expiryDate", "publishDate"} {
+		if _, ok := widgets[k]; !ok {
+			dateOK = false
+		}
+	}
+	if dateOK {
+		widgets["lastmod"].(*widget.Entry).SetText("2024-06-01T00:00:00+08:00")
+		fields3, _ := collectExtra(schema, widgets)
+		dateOK = fields3["lastmod"] == "2024-06-01T00:00:00+08:00"
+	}
+	ck("ui.dateFields", dateOK)
 	for _, k := range []string{"title", "date", "draft", "tags"} { // 默认字段不重复
 		if _, ok := widgets[k]; ok {
 			okAll = false

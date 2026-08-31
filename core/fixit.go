@@ -150,6 +150,10 @@ func ThemeSchema(theme string) []Field {
 			Field{Key: "hidden_from_related", Label: "相关文章隐藏", Kind: "bool"},
 			Field{Key: "password", Label: "访问密码", Kind: "text"},
 			Field{Key: "message", Label: "密码提示语", Kind: "text"},
+			// Hugo 内建日期（FixIt 的"最近更新"/过期提醒依赖 lastmod/expiryDate）
+			Field{Key: "lastmod", Label: "更新日期", Kind: "date"},
+			Field{Key: "expiryDate", Label: "过期日期", Kind: "date"},
+			Field{Key: "publishDate", Label: "发布日期", Kind: "date"},
 			// 页面级开关（FixIt 支持布尔简写，见 function/param.html）
 			Field{Key: "toc", Label: "目录", Kind: "bool"},
 			Field{Key: "math", Label: "数学公式", Kind: "bool"},

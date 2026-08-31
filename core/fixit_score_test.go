@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-const fixitCoreTotal = 44
+const fixitCoreTotal = 45
 
 type scoreKeeper struct {
 	t     *testing.T
@@ -217,6 +217,15 @@ func TestFixItScore(t *testing.T) {
 	s.ck("save.subtitle", strings.Contains(got, `subtitle: "新副标题"`))
 	s.ck("save.featuredImage", strings.Contains(got, `featured_image: "/images/new.jpg"`))
 	s.ck("save.weightBareNumber", strings.Contains(got, "weight: 9\n"))
+
+	// r2b: 日期类字段裸写（lastmod 等，YAML 时间戳不应加引号）
+	s.ck("save.lastmodBare", func() bool {
+		p := copyPost(t, site, helloRel)
+		if err := SavePost(p, map[string]string{"lastmod": "2024-06-01T00:00:00+08:00"}, nil, "正文不变。\n"); err != nil {
+			t.Fatal(err)
+		}
+		return strings.Contains(readFile(t, p), "lastmod: 2024-06-01T00:00:00+08:00\n")
+	}())
 
 	// r3: 布尔与数组字段
 	p = copyPost(t, site, lockedRel)
