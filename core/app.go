@@ -99,20 +99,63 @@ func (a *App) SaveConfig() {
 // Logs 返回进程日志历史快照。
 func (a *App) Logs() []string { return a.hub.HistorySnapshot() }
 
-// SafeSitePath 将站点内相对路径转为绝对路径，并阻止目录穿越。
+func pathWithinRoot(root, target string) bool {
+	rel, err := filepath.Rel(root, target)
+	if err != nil || rel == "." || filepath.IsAbs(rel) {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))
+}
+
+// evalWithExistingPrefix 解析已有路径组件中的符号链接，并保留尚不存在的尾部。
+func evalWithExistingPrefix(path string) (string, error) {
+	probe := path
+	for {
+		resolved, err := filepath.EvalSymlinks(probe)
+		if err == nil {
+			tail, err := filepath.Rel(probe, path)
+			if err != nil {
+				return "", err
+			}
+			return filepath.Clean(filepath.Join(resolved, tail)), nil
+		}
+		if !os.IsNotExist(err) {
+			return "", err
+		}
+		parent := filepath.Dir(probe)
+		if parent == probe {
+			return "", err
+		}
+		probe = parent
+	}
+}
+
+// SafeSitePath 将站点内相对路径转为绝对路径，并阻止目录穿越及符号链接逃逸。
 func (a *App) SafeSitePath(rel string) (string, error) {
 	cfg := a.ConfigSnapshot()
 	if cfg.SiteDir == "" {
 		return "", errors.New("请先在「设置」中填写站点目录")
 	}
 	rel = strings.ReplaceAll(rel, "\\", "/")
-	if rel == "" || strings.Contains(rel, "..") {
+	relPath := filepath.FromSlash(rel)
+	if rel == "" || filepath.IsAbs(relPath) {
 		return "", errors.New("非法路径")
 	}
-	root := filepath.Clean(cfg.SiteDir)
-	abs := filepath.Join(root, filepath.FromSlash(rel))
-	if !strings.HasPrefix(abs, root+string(os.PathSeparator)) {
+	root, err := filepath.Abs(cfg.SiteDir)
+	if err != nil {
+		return "", err
+	}
+	abs, err := filepath.Abs(filepath.Join(root, relPath))
+	if err != nil || !pathWithinRoot(root, abs) {
 		return "", errors.New("路径必须位于站点目录内")
+	}
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", errors.New("站点目录不存在或无法访问")
+	}
+	canonicalAbs, err := evalWithExistingPrefix(abs)
+	if err != nil || !pathWithinRoot(canonicalRoot, canonicalAbs) {
+		return "", errors.New("路径通过符号链接指向站点目录外")
 	}
 	return abs, nil
 }

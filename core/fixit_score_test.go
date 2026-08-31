@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-const fixitCoreTotal = 63
+const fixitCoreTotal = 64
 
 type scoreKeeper struct {
 	t     *testing.T
@@ -203,6 +203,36 @@ func TestFixItScore(t *testing.T) {
 	writeSortPost("instant-new.md", "Instant New", "2023-12-31T20:00:00+00:00")
 	sortedPosts, sortErr := ListPosts(sortSite)
 	s.ck("list.timezoneChronology", sortErr == nil && len(sortedPosts) == 2 && sortedPosts[0].Title == "Instant New" && sortedPosts[1].Title == "Lexical New")
+
+	// SafeSitePath 必须拒绝站点内指向站点外文件的符号链接，防止 SavePost 越界写入
+	pathBase := t.TempDir()
+	pathSite := filepath.Join(pathBase, "site")
+	pathContent := filepath.Join(pathSite, "content", "posts")
+	if err := os.MkdirAll(pathContent, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outsidePath := filepath.Join(pathBase, "outside.md")
+	outsideRaw := "---\ntitle: Outside\n---\n\nSECRET\n"
+	if err := os.WriteFile(outsidePath, []byte(outsideRaw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	linkPath := filepath.Join(pathContent, "escape.md")
+	symlinkBlocked := false
+	if err := os.Symlink(outsidePath, linkPath); err != nil {
+		t.Logf("symlink unavailable: %v", err)
+	} else {
+		pathApp := NewApp(filepath.Join(t.TempDir(), "config.json"))
+		pathApp.SetConfig(Config{SiteDir: pathSite})
+		resolved, safeErr := pathApp.SafeSitePath("content/posts/escape.md")
+		if safeErr == nil {
+			_, _, _, outsideBody, _, parseErr := ParsePost(resolved)
+			if parseErr == nil {
+				_ = SavePost(resolved, map[string]string{"title": "MUTATED"}, nil, outsideBody)
+			}
+		}
+		symlinkBlocked = safeErr != nil && readFile(t, outsidePath) == outsideRaw
+	}
+	s.ck("path.rejectSymlinkEscape", symlinkBlocked)
 
 	yamlApp := NewApp(filepath.Join(t.TempDir(), "config.json"))
 	yamlApp.SetConfig(Config{SiteDir: yamlSite, HugoBin: hugoBin})
