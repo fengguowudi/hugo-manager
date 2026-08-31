@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/BurntSushi/toml"
 	"gopkg.in/yaml.v3"
 )
 
@@ -109,6 +110,68 @@ func parseYAMLFields(src string, fields map[string]string, arrays map[string][]s
 	return nil
 }
 
+func formatTOMLTime(t time.Time) string {
+	switch t.Location().String() {
+	case "date-local":
+		return t.Format("2006-01-02")
+	case "time-local":
+		return t.Format("15:04:05.999999999")
+	case "datetime-local":
+		return t.Format("2006-01-02T15:04:05.999999999")
+	default:
+		return t.Format(time.RFC3339Nano)
+	}
+}
+
+func tomlScalarString(v any) (string, bool) {
+	switch x := v.(type) {
+	case string:
+		return x, true
+	case bool:
+		return strconv.FormatBool(x), true
+	case int64:
+		return strconv.FormatInt(x, 10), true
+	case float64:
+		return strconv.FormatFloat(x, 'g', -1, 64), true
+	case time.Time:
+		return formatTOMLTime(x), true
+	default:
+		return "", false
+	}
+}
+
+// parseTOMLFields 用正规 TOML 解析器读取根标量和标量数组；嵌套 table 保持原文。
+func parseTOMLFields(src string, fields map[string]string, arrays map[string][]string) error {
+	var root map[string]any
+	if _, err := toml.Decode(src, &root); err != nil {
+		return err
+	}
+	for key, value := range root {
+		if scalar, ok := tomlScalarString(value); ok {
+			fields[key] = scalar
+			continue
+		}
+		itemsRaw, ok := value.([]any)
+		if !ok {
+			continue // map / array-of-table 不是页面根标量字段
+		}
+		items := make([]string, 0, len(itemsRaw))
+		allScalar := true
+		for _, item := range itemsRaw {
+			scalar, ok := tomlScalarString(item)
+			if !ok {
+				allScalar = false
+				break
+			}
+			items = append(items, scalar)
+		}
+		if allScalar {
+			arrays[key] = items
+		}
+	}
+	return nil
+}
+
 // ParsePost 解析一个内容文件：返回 front matter 格式、标量字段、数组字段、正文、原始全文。
 // 没有 front matter 时 format 为空、body 即全文。
 func ParsePost(p string) (fmFmt string, fields map[string]string, arrays map[string][]string, body, raw string, err error) {
@@ -145,6 +208,13 @@ func ParsePost(p string) (fmFmt string, fields map[string]string, arrays map[str
 	}
 	if fmFmt == "yaml" {
 		if err = parseYAMLFields(strings.Join(lines[1:end], "\n"), fields, arrays); err != nil {
+			return
+		}
+		body = strings.Join(lines[end+1:], "\n")
+		return
+	}
+	if fmFmt == "toml" {
+		if err = parseTOMLFields(strings.Join(lines[1:end], "\n"), fields, arrays); err != nil {
 			return
 		}
 		body = strings.Join(lines[end+1:], "\n")
@@ -422,6 +492,28 @@ var reBare = regexp.MustCompile(`^(true|false|-?[0-9]+(\.[0-9]+)?|[0-9]{4}-[0-9]
 
 func bareValue(v string) bool { return reBare.MatchString(strings.TrimSpace(v)) }
 
+func hasTOMLTripleClose(s, delim string) bool {
+	for start := 0; start < len(s); {
+		rel := strings.Index(s[start:], delim)
+		if rel < 0 {
+			return false
+		}
+		i := start + rel
+		if delim == "'''" {
+			return true
+		}
+		backslashes := 0
+		for j := i - 1; j >= 0 && s[j] == '\\'; j-- {
+			backslashes++
+		}
+		if backslashes%2 == 0 {
+			return true
+		}
+		start = i + 1
+	}
+	return false
+}
+
 // blockEnd 返回 key 行所属块的结束下标（不含）：
 // 其后所有缩进行（块式列表项 / 嵌套 map）都属于这个键；
 // 若键行以 [ 开头且方括号未闭合（多行行内数组），继续吞到闭合——TOML 允许 ] 顶格。
@@ -431,6 +523,23 @@ func blockEnd(lines []string, i int) int {
 		j++
 	}
 	kv := strings.IndexAny(lines[i], ":=")
+	if kv >= 0 {
+		value := strings.TrimSpace(lines[i][kv+1:])
+		for _, delim := range []string{`"""`, `'''`} {
+			if !strings.HasPrefix(value, delim) {
+				continue
+			}
+			if hasTOMLTripleClose(value[len(delim):], delim) {
+				return i + 1
+			}
+			for k := i + 1; k < len(lines); k++ {
+				if hasTOMLTripleClose(lines[k], delim) {
+					return k + 1
+				}
+			}
+			return len(lines)
+		}
+	}
 	if kv < 0 || !strings.HasPrefix(strings.TrimSpace(lines[i][kv+1:]), "[") {
 		return j
 	}

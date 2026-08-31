@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-const fixitCoreTotal = 60
+const fixitCoreTotal = 62
 
 type scoreKeeper struct {
 	t     *testing.T
@@ -257,6 +257,33 @@ func TestFixItScore(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.ck("toml.inlineComments", tcf["title"] == "Secret #2" && tcf["draft"] == "true" && strings.Join(tca["tags"], ",") == "internal,tag#2")
+
+	// TOML 转义与三引号字符串必须按语义读取，不能在 UI 保存后双重转义
+	tomlStringPath := filepath.Join(commentDir, "toml-string-semantics.md")
+	tomlStringRaw := "+++\ntitle = \"Unicode \\u4e2d\"\ndescription = \"line one\\nline two\"\nsummary = \"\"\"alpha\nbeta\"\"\"\ntags = [\"tab\\titem\", \"C, C++\"]\ndate = 2024-02-01T09:00:00+08:00\n\n[params]\ndescription = \"nested\"\n+++\n\nbody\n"
+	if err := os.WriteFile(tomlStringPath, []byte(tomlStringRaw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, tomlStringFields, tomlStringArrays, _, _, err := ParsePost(tomlStringPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.ck("toml.parseStringSemantics", tomlStringFields["title"] == "Unicode 中" &&
+		tomlStringFields["description"] == "line one\nline two" && tomlStringFields["summary"] == "alpha\nbeta" &&
+		strings.Join(tomlStringArrays["tags"], "|") == "tab\titem|C, C++" && tomlStringFields["date"] == "2024-02-01T09:00:00+08:00")
+
+	if err := SavePost(tomlStringPath, map[string]string{"title": tomlStringFields["title"], "description": tomlStringFields["description"], "summary": tomlStringFields["summary"]}, map[string][]string{"tags": tomlStringArrays["tags"]}, "updated\n"); err != nil {
+		t.Fatal(err)
+	}
+	tomlStringSaved := readFile(t, tomlStringPath)
+	_, tomlStringFields2, tomlStringArrays2, _, _, err := ParsePost(tomlStringPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.ck("toml.saveStringSemantics", tomlStringFields2["title"] == "Unicode 中" &&
+		tomlStringFields2["description"] == "line one\nline two" && tomlStringFields2["summary"] == "alpha\nbeta" &&
+		strings.Join(tomlStringArrays2["tags"], "|") == "tab\titem|C, C++" &&
+		strings.Contains(tomlStringSaved, "[params]\ndescription = \"nested\""))
 
 	// 引号内逗号是数组项内容，不能被当作分隔符
 	commaYAMLPath := filepath.Join(commentDir, "comma-yaml.md")
